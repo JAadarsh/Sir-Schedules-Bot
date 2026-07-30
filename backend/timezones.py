@@ -2,6 +2,10 @@
 file with the most common timezones for the world.
 """
 
+import datetime
+import re
+from zoneinfo import ZoneInfo
+
 COMMON_TIMEZONES = [
     # Africa
     "Africa/Cairo",
@@ -104,3 +108,44 @@ COMMON_TIMEZONES = [
     # Baseline
     "UTC"
 ]
+
+
+def normalize_timezone_name(value: str) -> str:
+    """Normalize a timezone string from user input to a canonical IANA name."""
+    if not value:
+        return value
+
+    cleaned = value.strip()
+    if cleaned in COMMON_TIMEZONES:
+        return cleaned
+
+    normalized = cleaned.replace(" ", "_")
+    if normalized in COMMON_TIMEZONES:
+        return normalized
+
+    compact = re.sub(r"[^a-zA-Z0-9]+", "_", cleaned).strip("_")
+    for candidate in COMMON_TIMEZONES:
+        if candidate.lower().endswith(compact.lower()):
+            return candidate
+
+    return cleaned
+
+
+def get_local_scheduled_datetime(
+    hour: int,
+    minute: int,
+    now: datetime.datetime | None = None,
+    timezone_name: str | None = None,
+) -> datetime.datetime:
+    """Build a timezone-aware datetime for the requested local hour/minute."""
+    current_time = now or datetime.datetime.now().astimezone()
+    tzinfo = current_time.tzinfo or datetime.timezone.utc
+
+    if timezone_name:
+        normalized_timezone = normalize_timezone_name(timezone_name)
+        tzinfo = ZoneInfo(normalized_timezone)
+
+    return datetime.datetime.combine(
+        current_time.date(),
+        datetime.time(hour=hour, minute=minute, tzinfo=tzinfo),
+    )

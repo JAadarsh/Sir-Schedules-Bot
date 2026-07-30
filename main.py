@@ -5,15 +5,15 @@ Copyright Aadarsh Joshi 2026 all rights reserved.
 
 import asyncio
 import discord
-from backend.openrouterpy import openrouterrequests as OpenRouterRequests
+from backend.openrouterpy import OpenRouterRequests as OpenRouterRequests
 import os
 import logging
 import datetime
 from dotenv import load_dotenv
 from backend.supabase.SupabaseRequests import Database
+from backend.timezones import COMMON_TIMEZONES, get_local_scheduled_datetime, normalize_timezone_name
 from discord import app_commands
 from discord.ext import tasks, commands
-from zoneinfo import ZoneInfo, available_timezones
 
 """
 Notice:
@@ -53,13 +53,18 @@ def direct_message(user_id: int, message: str):
     else:
         return f"User with ID {user_id} not found."
 
-@tasks.loop(minutes=1)
+@tasks.loop(seconds=10)
 async def check_scheduled_messages():
     """
     checks scheduled messages every minute
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
-    response = await bot.db.get_scheduled_messages(now)
+
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        response = await bot.db.get_scheduled_messages(now)
+    except Exception as e:
+        print(f"Error fetching scheduled messages: {e}")
+        return
     
     for entry in response:
         user_id = entry["user_id"]
@@ -75,6 +80,7 @@ async def check_scheduled_messages():
         try:
             for recipient_id in recipient_list:
                 direct_message(recipient_id, message)
+            await bot.db.mark_scheduled_message_sent(user_id, guild_id)
         except Exception as e:
             print(f"Error sending message to user {recipient_id}: {e}")
 
@@ -167,9 +173,20 @@ async def say_something(interaction: discord.Interaction, *, prompt: str):
 
     await interaction.followup.send(response)
 
+async def timezone_autocomplete(interaction: discord.Interaction, current: str):
+    current_value = current.lower()
+    matches = []
+    for timezone_name in COMMON_TIMEZONES:
+        label = timezone_name.replace("/", " / ").replace("_", " ")
+        if current_value in label.lower() or current_value in timezone_name.lower():
+            matches.append(app_commands.Choice(name=label, value=timezone_name))
+    return matches[:25]
+
+
 @bot.tree.command(name="set_time", description="Set a time for the bot to send a message")
-@app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)")
-async def set_time(interaction: discord.Interaction, hour: int, minute: int):
+@app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
+@app_commands.autocomplete(timezone=timezone_autocomplete)
+async def set_time(interaction: discord.Interaction, hour: int, minute: int, timezone: str | None = None):
     """
     This method is to set a time for the bot to send a message. 
     """
@@ -180,10 +197,11 @@ async def set_time(interaction: discord.Interaction, hour: int, minute: int):
     except ValueError as e:
         return await interaction.response.send_message(str(e), ephemeral=True)
 
-    scheduled_time = datetime.datetime.combine(
-        datetime.datetime.now(datetime.timezone.utc).date(),
-        datetime.time(hour=hour, minute=minute, tzinfo=datetime.timezone.utc),
-    )
+    normalized_timezone = normalize_timezone_name(timezone) if timezone else None
+    if timezone and normalized_timezone not in COMMON_TIMEZONES:
+        return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
+
+    scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
     await bot.db.set_hours(interaction.user.id, interaction.guild_id, scheduled_time)
     await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} for your messages.")
 

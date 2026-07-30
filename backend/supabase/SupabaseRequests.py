@@ -131,7 +131,13 @@ class Database:
             if scheduled_time.tzinfo is None:
                 scheduled_time = scheduled_time.replace(tzinfo=datetime.timezone.utc)
 
-            if scheduled_time <= now:
+            scheduled_time_in_now_tz = scheduled_time.astimezone(now.tzinfo)
+            now_in_same_tz = now.astimezone(now.tzinfo)
+
+            if (
+                scheduled_time_in_now_tz.hour == now_in_same_tz.hour
+                and scheduled_time_in_now_tz.minute == now_in_same_tz.minute
+            ):
                 due_messages.append(row)
 
         return due_messages
@@ -158,4 +164,19 @@ class Database:
             "recipient_list": recipient_list,
             "universal_message": universal_message,
             "timestamp": scheduled_time
+        }).execute()
+
+    async def mark_scheduled_message_sent(self, user_id: int, guild_id: int):
+        """Clears the scheduled timestamp after a message has been delivered."""
+        response = await self.client.table("messenger").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        if not response.data:
+            return
+
+        row = response.data[0]
+        await self.client.table("messenger").upsert({
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "recipient_list": row.get("recipient_list") or [],
+            "universal_message": row.get("universal_message") or "",
+            "timestamp": None
         }).execute()
