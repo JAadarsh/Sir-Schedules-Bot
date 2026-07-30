@@ -1,4 +1,5 @@
 {
+    "name": "sir-schedules-bot-openrouterts",
     "type": "module",
     "dependencies": {
         "@types/node": "^26.0.0",

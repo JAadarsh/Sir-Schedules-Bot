@@ -1,4 +1,4 @@
-# Discord Greeter Bot
+# Sir Schedule's Bot
 
 #### 
 
@@ -51,6 +51,10 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 ## Changelog
+
+
+
+v0.1.6: More QOL changes \& bug fixes + Rebranding. 
 
 
 
