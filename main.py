@@ -1,5 +1,5 @@
 """
-Version 0.1.6
+Version 0.2.1
 Copyright Aadarsh Joshi 2026 all rights reserved.
 """
 
@@ -203,6 +203,6 @@ async def set_time(interaction: discord.Interaction, hour: int, minute: int, tim
 
     scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
     await bot.db.set_hours(interaction.user.id, interaction.guild_id, scheduled_time)
-    await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} for your messages.")
+    await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} local or {hour:02d}:{minute:02d} UTC for your messages.")
 
 bot.run(token)
