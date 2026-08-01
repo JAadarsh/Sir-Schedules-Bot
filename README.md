@@ -1,4 +1,4 @@
-# Discord Greeter Bot
+# Sir Schedule's Bot
 
 #### 
 
@@ -6,7 +6,7 @@
 
 
 
-Do you have to do something every morning for your discord server? Any message you want to give someone? Or do you just want someone to know that you see them? In any case, this discord bot is designed so you can automate daily tasks!
+Do you have to do something every morning for your discord server? Any message you want to give someone? Or do you just want to send a check in message? In any case, this discord bot is designed so you can automate daily tasks!
 
 
 
@@ -14,7 +14,11 @@ Preload a question of the day to send at a specific time, schedule a DM to a fri
 
 
 
-Currently in development, but is currently running.
+Currently in development, but is now available!
+
+
+
+**Please welcome v0.2.1! This version allows for a more updated \& dynamic scheduling system. More features and QOL updates to come in the near future.** 
 
 
 
@@ -54,6 +58,22 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 
+**v0.2.1: DMs now works. Bot is ready for a full-time deploy.**
+
+
+
+v0.1.6: More QOL changes \& bug fixes + Rebranding.
+
+
+
+v0.1.5: QOL changes \& bug fixes
+
+
+
+v0.1.4: updates to add set\_time function
+
+
+
 v0.1.3: change in deployment provider.
 
 
@@ -66,5 +86,5 @@ v0.1.1: fixes to supabase connection. add recipient slash command now works; add
 
 
 
-v0.1.0: overhaul to the file organization. some functions may not work as intended.
+**v0.1.0: overhaul to the file organization. some functions may not work as intended.**
 

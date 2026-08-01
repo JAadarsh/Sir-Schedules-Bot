@@ -1,6 +1,6 @@
 {
-  "name": "greeter-bot",
-  "version": "0.1.1",
+  "name": "sir-schedules-bot",
+  "version": "0.2.1",
   "description": "Discord bot with TypeScript microservice backend",
   "type": "module",
   "scripts": {
