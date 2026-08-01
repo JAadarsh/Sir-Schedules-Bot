@@ -56,7 +56,7 @@ def direct_message(user_id: int, message: str):
 @tasks.loop(seconds=10)
 async def check_scheduled_messages():
     """
-    checks scheduled messages every minute
+    checks scheduled messages every 10s
     """
 
     try:
