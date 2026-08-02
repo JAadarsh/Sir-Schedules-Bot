@@ -1,5 +1,5 @@
 """
-Data access object for all Supabase requests.
+Access object for set time requests in Supabase.
 Credit: SUPABASE PTE. LTD. 2026
 ---------------------------------------------
 Aadarsh Joshi 2026
