@@ -10,7 +10,7 @@ import os
 import logging
 import datetime
 from dotenv import load_dotenv
-from backend.supabase.SupabaseRequests import Database
+from backend.supabase.SupabaseDB1 import Database
 from backend.timezones import COMMON_TIMEZONES, get_local_scheduled_datetime, normalize_timezone_name
 from discord import app_commands
 from discord.ext import tasks, commands
