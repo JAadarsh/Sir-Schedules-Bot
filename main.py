@@ -11,6 +11,7 @@ import logging
 import datetime
 from dotenv import load_dotenv
 from backend.supabase.SupabaseDB1 import Database
+from backend.supabase.SupabaseDB2 import Database2
 from backend.timezones import COMMON_TIMEZONES, get_local_scheduled_datetime, normalize_timezone_name
 from discord import app_commands
 from discord.ext import tasks, commands
@@ -39,6 +40,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # looping tasks
 
+
 def direct_message(user_id: int, message: str):
     """
     Helper method to send a dm to a user.
@@ -52,6 +54,8 @@ def direct_message(user_id: int, message: str):
         return "completed"
     else:
         return f"User with ID {user_id} not found."
+
+
 
 @tasks.loop(seconds=10)
 async def check_scheduled_messages():
@@ -84,12 +88,38 @@ async def check_scheduled_messages():
         except Exception as e:
             print(f"Error sending message to user {recipient_id}: {e}")
 
+
+@tasks.loop(seconds=10)
+async def check_daily_scheduled_messages():
+    """Checks the repeating daily schedule and sends it once per local day per guild."""
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        response = await bot.db2.get_scheduled_messages(now)
+    except Exception as e:
+        print(f"Error fetching daily scheduled messages: {e}")
+        return
+
+    for entry in response:
+        guild_id = entry["guild_id"]
+        message = entry["universal_message"]
+        recipient_list = entry.get("recipient_list") or []
+
+        if not message or not message.strip():
+            continue
+
+        try:
+            for recipient_id in recipient_list:
+                direct_message(recipient_id, message)
+        except Exception as e:
+            print(f"Error sending daily message to guild {guild_id}: {e}")
+
+
 def looping_tasks():
     """
     helper method to start all looping tasks
-    (yes I know there's only one)
     """
     check_scheduled_messages.start()
+    check_daily_scheduled_messages.start()
 
 @bot.event
 async def on_ready():
@@ -98,11 +128,18 @@ async def on_ready():
 
     # database connection
     bot.db = Database(supabase_url, supabase_key)
+    bot.db2 = Database2(supabase_url, supabase_key)
     try:
         await bot.db.connect()
         print("Database connected.")
     except Exception as e:
         print(f"Error connecting to database: {e}")
+
+    try:
+        await bot.db2.connect()
+        print("Daily schedule database connected.")
+    except Exception as e:
+        print(f"Error connecting to daily schedule database: {e}")
 
     # / cmds
     try:
@@ -134,6 +171,60 @@ async def view_message(interaction: discord.Interaction):
         await interaction.response.send_message(f"Current message is {message}")
     else:
         await interaction.response.send_message("No current message. Use /set_message to set one.")
+
+
+@bot.tree.command(name="set_daily_message", description="Set the recurring daily greeting for this server")
+@app_commands.describe(text="The recurring message to send every day")
+async def set_daily_message(interaction: discord.Interaction, *, text: str):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+    if len(text) > 1500:
+        return await interaction.response.send_message("Message is too long. Please keep it under 1500 characters.", ephemeral=True)
+
+    await bot.db2.set_universal_message(interaction.guild_id, text)
+    await interaction.response.send_message("Daily server message updated.")
+
+
+@bot.tree.command(name="view_daily_message", description="View the recurring daily message for this server")
+async def view_daily_message(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    message = await bot.db2.get_universal_message(interaction.guild_id)
+    if message:
+        await interaction.response.send_message(f"Current daily message is: {message}")
+    else:
+        await interaction.response.send_message("No daily message is set for this server yet. Use /set_daily_message to create one.")
+
+
+@bot.tree.command(name="add_daily_recipient", description="Add someone to this server's daily mailing list")
+@app_commands.describe(recipient="User to receive the daily message")
+async def add_daily_recipient(interaction: discord.Interaction, recipient: discord.User):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.add_recipient(interaction.guild_id, recipient.id)
+    await interaction.response.send_message(f"{recipient.name} has been added to the server's daily recipient list.")
+
+
+@bot.tree.command(name="remove_daily_recipient", description="Remove someone from this server's daily mailing list")
+@app_commands.describe(recipient="User to remove from the server's daily message list")
+async def remove_daily_recipient(interaction: discord.Interaction, recipient: discord.User):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.remove_recipient(interaction.guild_id, recipient.id)
+    await interaction.response.send_message(f"{recipient.name} has been removed from the server's daily recipient list.")
+
+
+@bot.tree.command(name="clear_daily_recipients", description="Clear the server's daily recipient list")
+async def clear_daily_recipients(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.clear_recipients(interaction.guild_id)
+    await interaction.response.send_message("Server daily recipient list cleared.")
+
 
 @bot.tree.command(name="add_recipient", description="Add someone to the mailing list")
 @app_commands.describe(recipient="User to add to recipient list")

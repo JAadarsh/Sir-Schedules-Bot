@@ -101,6 +101,24 @@ class Database2:
 			return []
 		return response.data[0].get("recipient_list") or []
 
+	async def clear_recipients(self, guild_id: int):
+		"""Clear the recipient list while preserving the stored message and schedule."""
+		response = await self.client.table("DB2_Repeated_Messages").select("universal_message,timestamp").eq("guild_id", guild_id).execute()
+		if response.data:
+			row = response.data[0]
+			message = row.get("universal_message") or ""
+			timestamp = row.get("timestamp")
+		else:
+			message = ""
+			timestamp = None
+
+		await self.client.table("DB2_Repeated_Messages").upsert({
+			"guild_id": guild_id,
+			"recipient_list": [],
+			"universal_message": message,
+			"timestamp": timestamp,
+		}).execute()
+
 	async def set_timestamp(self, guild_id: int, scheduled_time: datetime.datetime):
 		"""Store a persistent timestamptz for the guild's daily schedule."""
 		if isinstance(scheduled_time, datetime.datetime):
