@@ -31,6 +31,7 @@ intents = discord.Intents.all()
 
 # command prefix is !, change later because its popular
 bot = commands.Bot(command_prefix='!', intents=intents)
+daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
 
 
 # -------------------------------------------------
@@ -41,19 +42,27 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # looping tasks
 
 
-def direct_message(user_id: int, message: str):
+async def direct_message(user_id: int, message: str) -> bool:
     """
     Helper method to send a dm to a user.
     """
     if not message or not message.strip():
-        return "Message is empty, skipping."
+        return False
     
     user = bot.get_user(user_id)
-    if user:
-        asyncio.create_task(user.send(message))
-        return "completed"
-    else:
-        return f"User with ID {user_id} not found."
+    if user is None:
+        user = await bot.fetch_user(user_id)
+    await user.send(message)
+    return True
+
+
+@tasks.loop(seconds=60)
+async def refresh_daily_message_cache():
+    """Forget daily messages from previous UTC dates."""
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    daily_messages_sent.intersection_update(
+        cache_key for cache_key in daily_messages_sent if cache_key[2] == today
+    )
 
 
 
@@ -82,11 +91,11 @@ async def check_scheduled_messages():
 
         # Send the message to each recipient
         try:
-            for recipient_id in recipient_list:
-                direct_message(recipient_id, message)
+            for recipient_id in recipient_list or []:
+                await direct_message(recipient_id, message)
             await bot.db.mark_scheduled_message_sent(user_id, guild_id)
         except Exception as e:
-            print(f"Error sending message to user {recipient_id}: {e}")
+            print(f"Error sending one-time message for user {user_id}: {e}")
 
 
 @tasks.loop(seconds=10)
@@ -107,10 +116,16 @@ async def check_daily_scheduled_messages():
         if not message or not message.strip():
             continue
 
+        cache_key = (guild_id, message, now.date())
+        if cache_key in daily_messages_sent:
+            continue
+
+        daily_messages_sent.add(cache_key)
         try:
             for recipient_id in recipient_list:
-                direct_message(recipient_id, message)
+                await direct_message(recipient_id, message)
         except Exception as e:
+            daily_messages_sent.discard(cache_key)
             print(f"Error sending daily message to guild {guild_id}: {e}")
 
 
@@ -118,8 +133,12 @@ def looping_tasks():
     """
     helper method to start all looping tasks
     """
-    check_scheduled_messages.start()
-    check_daily_scheduled_messages.start()
+    if not check_scheduled_messages.is_running():
+        check_scheduled_messages.start()
+    if not check_daily_scheduled_messages.is_running():
+        check_daily_scheduled_messages.start()
+    if not refresh_daily_message_cache.is_running():
+        refresh_daily_message_cache.start()
 
 @bot.event
 async def on_ready():
@@ -183,6 +202,34 @@ async def set_daily_message(interaction: discord.Interaction, *, text: str):
 
     await bot.db2.set_universal_message(interaction.guild_id, text)
     await interaction.response.send_message("Daily server message updated.")
+
+
+async def timezone_autocomplete(interaction: discord.Interaction, current: str):
+    current_value = current.lower()
+    matches = []
+    for timezone_name in COMMON_TIMEZONES:
+        label = timezone_name.replace("/", " / ").replace("_", " ")
+        if current_value in label.lower() or current_value in timezone_name.lower():
+            matches.append(app_commands.Choice(name=label, value=timezone_name))
+    return matches[:25]
+
+
+@bot.tree.command(name="set_daily_time", description="Set the time for the recurring daily message")
+@app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
+@app_commands.autocomplete(timezone=timezone_autocomplete)
+async def set_daily_time(interaction: discord.Interaction, hour: int, minute: int, timezone: str | None = None):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+    if not (0 <= hour < 24) or not (0 <= minute < 60):
+        return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
+
+    normalized_timezone = normalize_timezone_name(timezone) if timezone else None
+    if timezone and normalized_timezone not in COMMON_TIMEZONES:
+        return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
+
+    scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
+    await bot.db2.set_timestamp(interaction.guild_id, scheduled_time)
+    await interaction.response.send_message(f"Daily message time set to {hour:02d}:{minute:02d}.")
 
 
 @bot.tree.command(name="view_daily_message", description="View the recurring daily message for this server")
@@ -263,16 +310,6 @@ async def say_something(interaction: discord.Interaction, *, prompt: str):
         return await interaction.followup.send("AI returned an empty response. Please try again.", ephemeral=True)
 
     await interaction.followup.send(response)
-
-async def timezone_autocomplete(interaction: discord.Interaction, current: str):
-    current_value = current.lower()
-    matches = []
-    for timezone_name in COMMON_TIMEZONES:
-        label = timezone_name.replace("/", " / ").replace("_", " ")
-        if current_value in label.lower() or current_value in timezone_name.lower():
-            matches.append(app_commands.Choice(name=label, value=timezone_name))
-    return matches[:25]
-
 
 @bot.tree.command(name="set_time", description="Set a time for the bot to send a message")
 @app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
