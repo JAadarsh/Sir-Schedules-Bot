@@ -1,11 +1,11 @@
 """
-Data access object for all Supabase requests.
+Access object for set time requests in Supabase.
 Credit: SUPABASE PTE. LTD. 2026
 ---------------------------------------------
 Aadarsh Joshi 2026
 """
 
-# database.py
+# DsupabaseDB1.py
 import datetime
 from supabase import AsyncClient, acreate_client
 
@@ -27,18 +27,18 @@ class Database:
             "recipient_list": [],  # stored in int8[] format in Supabase
             "universal_message": ""
         }
-        await self.client.table("messenger").upsert(data_to_save).execute()
+        await self.client.table("DB1_Message_Once").upsert(data_to_save).execute()
 
     async def set_universal_message(self, user_id: int, guild_id: int, message: str):
         """Updates or sets the message while ensuring the recipient list is initialized."""
 
-        response = await self.client.table("messenger").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if response.data:
             recipient_list = response.data[0].get("recipient_list") or []
         else:
             recipient_list = []
 
-        await self.client.table("messenger").upsert({
+        await self.client.table("DB1_Message_Once").upsert({
             "user_id": user_id,
             "guild_id": guild_id,
             "recipient_list": recipient_list,
@@ -48,7 +48,7 @@ class Database:
     async def get_universal_message(self, user_id: int, guild_id: int) -> str:
         """Retrieves the universal message or returns empty string if missing."""
 
-        response = await self.client.table("messenger").select("universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if not response.data:
             return ""  # Default value for new users
         return response.data[0]["universal_message"]
@@ -56,7 +56,7 @@ class Database:
     async def add_recipient(self, user_id: int, guild_id: int, recipient_id: int):
         """Appends a user ID to the array safely, preventing duplicates."""
 
-        response = await self.client.table("messenger").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         
         if not response.data:
             recipient_list = []
@@ -66,7 +66,7 @@ class Database:
         if recipient_id not in recipient_list:
             recipient_list.append(recipient_id)
             # Upsert ensures data is saved even if user row didn't exist yet
-            await self.client.table("messenger").upsert({
+            await self.client.table("DB1_Message_Once").upsert({
                 "user_id": user_id,
                 "guild_id": guild_id,
                 "recipient_list": recipient_list
@@ -75,7 +75,7 @@ class Database:
     async def remove_recipient(self, user_id: int, guild_id: int, recipient_id: int):
         """Removes a user ID from the array if present."""
 
-        response = await self.client.table("messenger").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if not response.data:
             return  # No profile exists, nothing to remove
         
@@ -83,7 +83,7 @@ class Database:
         
         if recipient_id in recipient_list:
             recipient_list.remove(recipient_id)
-            await self.client.table("messenger").upsert({
+            await self.client.table("DB1_Message_Once").upsert({
                 "user_id": user_id,
                 "guild_id": guild_id,
                 "recipient_list": recipient_list
@@ -92,7 +92,7 @@ class Database:
     async def get_recipients(self, user_id: int, guild_id: int) -> list:
         """Returns the list of stored recipient IDs."""
 
-        response = await self.client.table("messenger").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if not response.data:
             return []  # Default empty list for new users
         return response.data[0]["recipient_list"] or []
@@ -100,7 +100,7 @@ class Database:
     async def get_scheduled_messages(self, now: datetime.datetime | None = None) -> list:
         """Returns messenger rows whose scheduled time is due at the given time."""
 
-        response = await self.client.table("messenger").select(
+        response = await self.client.table("DB1_Message_Once").select(
             "user_id,guild_id,timestamp,universal_message,recipient_list"
         ).execute()
 
@@ -149,7 +149,7 @@ class Database:
                 scheduled_time = scheduled_time.replace(tzinfo=datetime.timezone.utc)
             scheduled_time = scheduled_time.isoformat()
 
-        response = await self.client.table("messenger").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if response.data:
             row = response.data[0]
             recipient_list = row.get("recipient_list") or []
@@ -158,7 +158,7 @@ class Database:
             recipient_list = []
             universal_message = ""
 
-        await self.client.table("messenger").upsert({
+        await self.client.table("DB1_Message_Once").upsert({
             "user_id": user_id,
             "guild_id": guild_id,
             "recipient_list": recipient_list,
@@ -168,12 +168,12 @@ class Database:
 
     async def mark_scheduled_message_sent(self, user_id: int, guild_id: int):
         """Clears the scheduled timestamp after a message has been delivered."""
-        response = await self.client.table("messenger").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        response = await self.client.table("DB1_Message_Once").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
         if not response.data:
             return
 
         row = response.data[0]
-        await self.client.table("messenger").upsert({
+        await self.client.table("DB1_Message_Once").upsert({
             "user_id": user_id,
             "guild_id": guild_id,
             "recipient_list": row.get("recipient_list") or [],

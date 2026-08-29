@@ -1,6 +1,6 @@
 {
   "name": "sir-schedules-bot",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Discord bot with TypeScript microservice backend",
   "type": "module",
   "scripts": {

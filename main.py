@@ -1,5 +1,5 @@
 """
-Version 0.2.1
+Version 0.2.2
 Copyright Aadarsh Joshi 2026 all rights reserved.
 """
 
@@ -10,7 +10,8 @@ import os
 import logging
 import datetime
 from dotenv import load_dotenv
-from backend.supabase.SupabaseRequests import Database
+from backend.supabase.SupabaseDB1 import Database
+from backend.supabase.SupabaseDB2 import Database2
 from backend.timezones import COMMON_TIMEZONES, get_local_scheduled_datetime, normalize_timezone_name
 from discord import app_commands
 from discord.ext import tasks, commands
@@ -30,6 +31,7 @@ intents = discord.Intents.all()
 
 # command prefix is !, change later because its popular
 bot = commands.Bot(command_prefix='!', intents=intents)
+daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
 
 
 # -------------------------------------------------
@@ -39,24 +41,35 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # looping tasks
 
-def direct_message(user_id: int, message: str):
+
+async def direct_message(user_id: int, message: str) -> bool:
     """
     Helper method to send a dm to a user.
     """
     if not message or not message.strip():
-        return "Message is empty, skipping."
+        return False
     
     user = bot.get_user(user_id)
-    if user:
-        asyncio.create_task(user.send(message))
-        return "completed"
-    else:
-        return f"User with ID {user_id} not found."
+    if user is None:
+        user = await bot.fetch_user(user_id)
+    await user.send(message)
+    return True
+
+
+@tasks.loop(seconds=60)
+async def refresh_daily_message_cache():
+    """Forget daily messages from previous UTC dates."""
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    daily_messages_sent.intersection_update(
+        cache_key for cache_key in daily_messages_sent if cache_key[2] == today
+    )
+
+
 
 @tasks.loop(seconds=10)
 async def check_scheduled_messages():
     """
-    checks scheduled messages every minute
+    checks scheduled messages every 10s
     """
 
     try:
@@ -78,18 +91,54 @@ async def check_scheduled_messages():
 
         # Send the message to each recipient
         try:
-            for recipient_id in recipient_list:
-                direct_message(recipient_id, message)
+            for recipient_id in recipient_list or []:
+                await direct_message(recipient_id, message)
             await bot.db.mark_scheduled_message_sent(user_id, guild_id)
         except Exception as e:
-            print(f"Error sending message to user {recipient_id}: {e}")
+            print(f"Error sending one-time message for user {user_id}: {e}")
+
+
+@tasks.loop(seconds=10)
+async def check_daily_scheduled_messages():
+    """Checks the repeating daily schedule and sends it once per local day per guild."""
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        response = await bot.db2.get_scheduled_messages(now)
+    except Exception as e:
+        print(f"Error fetching daily scheduled messages: {e}")
+        return
+
+    for entry in response:
+        guild_id = entry["guild_id"]
+        message = entry["universal_message"]
+        recipient_list = entry.get("recipient_list") or []
+
+        if not message or not message.strip():
+            continue
+
+        cache_key = (guild_id, message, now.date())
+        if cache_key in daily_messages_sent:
+            continue
+
+        daily_messages_sent.add(cache_key)
+        try:
+            for recipient_id in recipient_list:
+                await direct_message(recipient_id, message)
+        except Exception as e:
+            daily_messages_sent.discard(cache_key)
+            print(f"Error sending daily message to guild {guild_id}: {e}")
+
 
 def looping_tasks():
     """
     helper method to start all looping tasks
-    (yes I know there's only one)
     """
-    check_scheduled_messages.start()
+    if not check_scheduled_messages.is_running():
+        check_scheduled_messages.start()
+    if not check_daily_scheduled_messages.is_running():
+        check_daily_scheduled_messages.start()
+    if not refresh_daily_message_cache.is_running():
+        refresh_daily_message_cache.start()
 
 @bot.event
 async def on_ready():
@@ -98,11 +147,18 @@ async def on_ready():
 
     # database connection
     bot.db = Database(supabase_url, supabase_key)
+    bot.db2 = Database2(supabase_url, supabase_key)
     try:
         await bot.db.connect()
         print("Database connected.")
     except Exception as e:
         print(f"Error connecting to database: {e}")
+
+    try:
+        await bot.db2.connect()
+        print("Daily schedule database connected.")
+    except Exception as e:
+        print(f"Error connecting to daily schedule database: {e}")
 
     # / cmds
     try:
@@ -134,6 +190,88 @@ async def view_message(interaction: discord.Interaction):
         await interaction.response.send_message(f"Current message is {message}")
     else:
         await interaction.response.send_message("No current message. Use /set_message to set one.")
+
+
+@bot.tree.command(name="set_daily_message", description="Set the recurring daily greeting for this server")
+@app_commands.describe(text="The recurring message to send every day")
+async def set_daily_message(interaction: discord.Interaction, *, text: str):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+    if len(text) > 1500:
+        return await interaction.response.send_message("Message is too long. Please keep it under 1500 characters.", ephemeral=True)
+
+    await bot.db2.set_universal_message(interaction.user.id, interaction.guild_id, text)
+    await interaction.response.send_message("Daily server message updated.")
+
+
+async def timezone_autocomplete(interaction: discord.Interaction, current: str):
+    current_value = current.lower()
+    matches = []
+    for timezone_name in COMMON_TIMEZONES:
+        label = timezone_name.replace("/", " / ").replace("_", " ")
+        if current_value in label.lower() or current_value in timezone_name.lower():
+            matches.append(app_commands.Choice(name=label, value=timezone_name))
+    return matches[:25]
+
+
+@bot.tree.command(name="set_daily_time", description="Set the time for the recurring daily message")
+@app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
+@app_commands.autocomplete(timezone=timezone_autocomplete)
+async def set_daily_time(interaction: discord.Interaction, hour: int, minute: int, timezone: str | None = None):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+    if not (0 <= hour < 24) or not (0 <= minute < 60):
+        return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
+
+    normalized_timezone = normalize_timezone_name(timezone) if timezone else None
+    if timezone and normalized_timezone not in COMMON_TIMEZONES:
+        return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
+
+    scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
+    await bot.db2.set_timestamp(interaction.user.id, interaction.guild_id, scheduled_time)
+    await interaction.response.send_message(f"Daily message time set to {hour:02d}:{minute:02d}.")
+
+
+@bot.tree.command(name="view_daily_message", description="View the recurring daily message for this server")
+async def view_daily_message(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    message = await bot.db2.get_universal_message(interaction.user.id, interaction.guild_id)
+    if message:
+        await interaction.response.send_message(f"Current daily message is: {message}")
+    else:
+        await interaction.response.send_message("No daily message is set for this server yet. Use /set_daily_message to create one.")
+
+
+@bot.tree.command(name="add_daily_recipient", description="Add someone to this server's daily mailing list")
+@app_commands.describe(recipient="User to receive the daily message")
+async def add_daily_recipient(interaction: discord.Interaction, recipient: discord.User):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.add_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+    await interaction.response.send_message(f"{recipient.name} has been added to the server's daily recipient list.")
+
+
+@bot.tree.command(name="remove_daily_recipient", description="Remove someone from this server's daily mailing list")
+@app_commands.describe(recipient="User to remove from the server's daily message list")
+async def remove_daily_recipient(interaction: discord.Interaction, recipient: discord.User):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.remove_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+    await interaction.response.send_message(f"{recipient.name} has been removed from the server's daily recipient list.")
+
+
+@bot.tree.command(name="clear_daily_recipients", description="Clear the server's daily recipient list")
+async def clear_daily_recipients(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.clear_recipients(interaction.user.id, interaction.guild_id)
+    await interaction.response.send_message("Server daily recipient list cleared.")
+
 
 @bot.tree.command(name="add_recipient", description="Add someone to the mailing list")
 @app_commands.describe(recipient="User to add to recipient list")
@@ -172,16 +310,6 @@ async def say_something(interaction: discord.Interaction, *, prompt: str):
         return await interaction.followup.send("AI returned an empty response. Please try again.", ephemeral=True)
 
     await interaction.followup.send(response)
-
-async def timezone_autocomplete(interaction: discord.Interaction, current: str):
-    current_value = current.lower()
-    matches = []
-    for timezone_name in COMMON_TIMEZONES:
-        label = timezone_name.replace("/", " / ").replace("_", " ")
-        if current_value in label.lower() or current_value in timezone_name.lower():
-            matches.append(app_commands.Choice(name=label, value=timezone_name))
-    return matches[:25]
-
 
 @bot.tree.command(name="set_time", description="Set a time for the bot to send a message")
 @app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
