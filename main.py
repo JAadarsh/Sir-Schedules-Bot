@@ -200,7 +200,7 @@ async def set_daily_message(interaction: discord.Interaction, *, text: str):
     if len(text) > 1500:
         return await interaction.response.send_message("Message is too long. Please keep it under 1500 characters.", ephemeral=True)
 
-    await bot.db2.set_universal_message(interaction.guild_id, text)
+    await bot.db2.set_universal_message(interaction.user.id, interaction.guild_id, text)
     await interaction.response.send_message("Daily server message updated.")
 
 
@@ -228,7 +228,7 @@ async def set_daily_time(interaction: discord.Interaction, hour: int, minute: in
         return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
 
     scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
-    await bot.db2.set_timestamp(interaction.guild_id, scheduled_time)
+    await bot.db2.set_timestamp(interaction.user.id, interaction.guild_id, scheduled_time)
     await interaction.response.send_message(f"Daily message time set to {hour:02d}:{minute:02d}.")
 
 
@@ -237,7 +237,7 @@ async def view_daily_message(interaction: discord.Interaction):
     if interaction.guild_id is None:
         return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
 
-    message = await bot.db2.get_universal_message(interaction.guild_id)
+    message = await bot.db2.get_universal_message(interaction.user.id, interaction.guild_id)
     if message:
         await interaction.response.send_message(f"Current daily message is: {message}")
     else:
@@ -250,7 +250,7 @@ async def add_daily_recipient(interaction: discord.Interaction, recipient: disco
     if interaction.guild_id is None:
         return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
 
-    await bot.db2.add_recipient(interaction.guild_id, recipient.id)
+    await bot.db2.add_recipient(interaction.user.id, interaction.guild_id, recipient.id)
     await interaction.response.send_message(f"{recipient.name} has been added to the server's daily recipient list.")
 
 
@@ -260,7 +260,7 @@ async def remove_daily_recipient(interaction: discord.Interaction, recipient: di
     if interaction.guild_id is None:
         return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
 
-    await bot.db2.remove_recipient(interaction.guild_id, recipient.id)
+    await bot.db2.remove_recipient(interaction.user.id, interaction.guild_id, recipient.id)
     await interaction.response.send_message(f"{recipient.name} has been removed from the server's daily recipient list.")
 
 
@@ -269,7 +269,7 @@ async def clear_daily_recipients(interaction: discord.Interaction):
     if interaction.guild_id is None:
         return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
 
-    await bot.db2.clear_recipients(interaction.guild_id)
+    await bot.db2.clear_recipients(interaction.user.id, interaction.guild_id)
     await interaction.response.send_message("Server daily recipient list cleared.")
 
 
