@@ -18,7 +18,7 @@ Currently in development, but is now available!
 
 
 
-**Please welcome v0.2.1! This version allows for a more updated \& dynamic scheduling system. More features and QOL updates to come in the near future.** 
+**Please welcome v0.2.2! This version allows for a more updated \& dynamic scheduling system. More features and QOL updates to come in the near future.**
 
 
 
@@ -55,6 +55,10 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 ## Changelog
+
+
+
+v0.2.2: Major changes related to various bugs \& issues. Daily repeated messages are now here \& working!
 
 
 
