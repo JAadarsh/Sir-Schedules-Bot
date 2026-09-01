@@ -90,5 +90,5 @@ v0.1.1: fixes to supabase connection. add recipient slash command now works; add
 
 
 
-**v0.1.0: overhaul to the file organization. some functions may not work as intended.**
+v0.1.0: overhaul to the file organization. some functions may not work as intended.
 
