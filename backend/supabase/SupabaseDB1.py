@@ -180,3 +180,7 @@ class Database:
             "universal_message": row.get("universal_message") or "",
             "timestamp": None
         }).execute()
+
+    async def delete_entry(self, user_id: int, guild_id: int):
+        """Removes all one-time message data for a user in a guild."""
+        await self.client.table("DB1_Message_Once").delete().eq("user_id", user_id).eq("guild_id", guild_id).execute()

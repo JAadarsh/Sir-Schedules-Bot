@@ -140,6 +140,12 @@ def looping_tasks():
     if not refresh_daily_message_cache.is_running():
         refresh_daily_message_cache.start()
 
+
+async def clear_all_data(user_id: int, guild_id: int):
+    """Remove all stored bot data for a user in a guild."""
+    await bot.db.delete_entry(user_id, guild_id)
+    await bot.db2.delete_entry(user_id, guild_id)
+
 @bot.event
 async def on_ready():
     await bot.change_presence(status=discord.Status.online, activity=discord.Game(name="We are open source! Check the github!"))
@@ -289,6 +295,15 @@ async def remove_recipient(interaction: discord.Interaction, recipient: discord.
 async def clear_recipients(interaction: discord.Interaction):
     await bot.db.clear_recipients(interaction.user.id, interaction.guild_id)
     await interaction.response.send_message("Recipient list cleared.")
+
+
+@bot.tree.command(name="clear_all_data", description="Delete all of your saved data in this server")
+async def clear_all_data_command(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await clear_all_data(interaction.user.id, interaction.guild_id)
+    await interaction.response.send_message("All of your saved data for this server has been deleted.", ephemeral=True)
 
 @bot.tree.command(name="say_something", description="Get an AI generated response")
 @app_commands.describe(prompt="Prompt for the AI")
