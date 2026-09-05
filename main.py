@@ -32,6 +32,10 @@ intents = discord.Intents.all()
 # command prefix is !, change later because its popular
 bot = commands.Bot(command_prefix='!', intents=intents)
 daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
+database_health = {
+    "db1": {"healthy": False, "error": "Not checked yet."},
+    "db2": {"healthy": False, "error": "Not checked yet."},
+}
 
 
 # -------------------------------------------------
@@ -76,8 +80,11 @@ async def check_scheduled_messages():
         now = datetime.datetime.now(datetime.timezone.utc)
         response = await bot.db.get_scheduled_messages(now)
     except Exception as e:
+        database_health["db1"] = {"healthy": False, "error": str(e)}
         print(f"Error fetching scheduled messages: {e}")
         return
+
+    database_health["db1"] = {"healthy": True, "error": None}
     
     for entry in response:
         user_id = entry["user_id"]
@@ -105,8 +112,11 @@ async def check_daily_scheduled_messages():
         now = datetime.datetime.now(datetime.timezone.utc)
         response = await bot.db2.get_scheduled_messages(now)
     except Exception as e:
+        database_health["db2"] = {"healthy": False, "error": str(e)}
         print(f"Error fetching daily scheduled messages: {e}")
         return
+
+    database_health["db2"] = {"healthy": True, "error": None}
 
     for entry in response:
         user_id = entry["user_id"]
@@ -162,14 +172,18 @@ async def on_ready():
     bot.db2 = Database2(supabase_url, supabase_key)
     try:
         await bot.db.connect()
+        database_health["db1"] = {"healthy": False, "error": "Connection client initialized; awaiting a successful query."}
         print("Database connected.")
     except Exception as e:
+        database_health["db1"] = {"healthy": False, "error": str(e)}
         print(f"Error connecting to database: {e}")
 
     try:
         await bot.db2.connect()
+        database_health["db2"] = {"healthy": False, "error": "Connection client initialized; awaiting a successful query."}
         print("Daily schedule database connected.")
     except Exception as e:
+        database_health["db2"] = {"healthy": False, "error": str(e)}
         print(f"Error connecting to daily schedule database: {e}")
 
     # / cmds
@@ -184,6 +198,20 @@ async def on_ready():
 
     # looping tasks
     looping_tasks()
+
+
+@bot.tree.command(name="database_status", description="Show the latest database health status")
+async def database_status(interaction: discord.Interaction):
+    """Report the latest confirmed health state of both database-backed schedulers."""
+    status_lines = []
+    for label, key in (("One-time messages", "db1"), ("Daily messages", "db2")):
+        state = database_health[key]
+        if state["healthy"]:
+            status_lines.append(f"{label}: healthy")
+        else:
+            status_lines.append(f"{label}: unavailable or not verified\nIssue: {state['error']}")
+
+    await interaction.response.send_message("\n".join(status_lines), ephemeral=True)
 
 # slash commands
 @bot.tree.command(name="set_message", description="Set your own custom greeting message!")
