@@ -58,6 +58,10 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 
+v0.2.3: Bug fixes \& QOL updates
+
+
+
 v0.2.2: Major changes related to various bugs \& issues. Daily repeated messages are now here \& working!
 
 
