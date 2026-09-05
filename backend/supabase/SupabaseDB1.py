@@ -171,6 +171,21 @@ class Database:
             "timestamp": scheduled_time
         }).execute()
 
+    async def clear_timestamp(self, user_id: int, guild_id: int):
+        """Clear the scheduled timestamp while preserving the stored recipient list and message."""
+        response = await self.client.table("DB1_Message_Once").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        if not response.data:
+            return
+
+        row = response.data[0]
+        await self.client.table("DB1_Message_Once").upsert({
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "recipient_list": row.get("recipient_list") or [],
+            "universal_message": row.get("universal_message") or "",
+            "timestamp": None
+        }).execute()
+
     async def mark_scheduled_message_sent(self, user_id: int, guild_id: int):
         """Clears the scheduled timestamp after a message has been delivered."""
         response = await self.client.table("DB1_Message_Once").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()

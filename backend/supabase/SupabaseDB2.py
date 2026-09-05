@@ -159,6 +159,21 @@ class Database2:
 			"timestamp": scheduled_time
 		}).execute()
 
+	async def clear_timestamp(self, user_id: int, guild_id: int):
+		"""Clear the scheduled timestamp while preserving the stored recipient list and message."""
+		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		if not response.data:
+			return
+
+		row = response.data[0]
+		await self.client.table("DB2_Repeated_Messages").upsert({
+			"user_id": user_id,
+			"guild_id": guild_id,
+			"recipient_list": row.get("recipient_list") or [],
+			"universal_message": row.get("universal_message") or "",
+			"timestamp": None
+		}).execute()
+
 	async def get_scheduled_messages(self, now: datetime.datetime | None = None) -> list:
 		"""Return rows where stored timestamp hour/minute equals now's hour/minute (UTC default)."""
 		response = await self.client.table("DB2_Repeated_Messages").select(

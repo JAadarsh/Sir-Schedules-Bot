@@ -252,6 +252,15 @@ async def set_daily_time(interaction: discord.Interaction, hour: int, minute: in
     await interaction.response.send_message(f"Daily message time set to {hour:02d}:{minute:02d}.")
 
 
+@bot.tree.command(name="clear_daily_time", description="Clear the recurring daily message time")
+async def clear_daily_time(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db2.clear_timestamp(interaction.user.id, interaction.guild_id)
+    await interaction.response.send_message("Daily message time cleared.")
+
+
 @bot.tree.command(name="view_daily_message", description="View the recurring daily message for this server")
 async def view_daily_message(interaction: discord.Interaction):
     if interaction.guild_id is None:
@@ -370,5 +379,15 @@ async def set_time(interaction: discord.Interaction, hour: int, minute: int, tim
     await bot.db.set_hours(interaction.user.id, interaction.guild_id, scheduled_time)
     timezone_label = normalized_timezone or scheduled_time.tzname() or "local timezone"
     await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} in {timezone_label} for your messages.")
+
+
+@bot.tree.command(name="clear_time", description="Clear the scheduled one-time message time")
+async def clear_time(interaction: discord.Interaction):
+    if interaction.guild_id is None:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+
+    await bot.db.clear_timestamp(interaction.user.id, interaction.guild_id)
+    await interaction.response.send_message("Scheduled one-time message time cleared.")
+
 
 bot.run(token)
