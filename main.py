@@ -35,6 +35,7 @@ daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
 database_health = {
     "db1": {"healthy": False, "error": "Not checked yet."},
     "db2": {"healthy": False, "error": "Not checked yet."},
+    "db3": {"healthy": False, "error": "Not checked yet."},
 }
 
 
