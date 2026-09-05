@@ -29,6 +29,11 @@ class Database:
         }
         await self.client.table("DB1_Message_Once").upsert(data_to_save).execute()
 
+    async def get_entry(self, user_id: int, guild_id: int) -> dict | None:
+        """Returns all stored one-time message data for a user in a guild."""
+        response = await self.client.table("DB1_Message_Once").select("*").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        return response.data[0] if response.data else None
+
     async def set_universal_message(self, user_id: int, guild_id: int, message: str):
         """Updates or sets the message while ensuring the recipient list is initialized."""
 

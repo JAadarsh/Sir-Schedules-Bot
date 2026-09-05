@@ -45,6 +45,11 @@ class Database2:
 
 		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
+	async def get_entry(self, user_id: int, guild_id: int) -> dict | None:
+		"""Return all stored daily message data for a user in a guild."""
+		response = await self.client.table("DB2_Repeated_Messages").select("*").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		return response.data[0] if response.data else None
+
 	async def set_universal_message(self, user_id: int, guild_id: int, message: str):
 		"""Update or insert universal text for a user+guild, preserving recipients."""
 		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()

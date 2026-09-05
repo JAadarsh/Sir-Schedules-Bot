@@ -109,6 +109,7 @@ async def check_daily_scheduled_messages():
         return
 
     for entry in response:
+        user_id = entry["user_id"]
         guild_id = entry["guild_id"]
         message = entry["universal_message"]
         recipient_list = entry.get("recipient_list") or []
@@ -121,12 +122,17 @@ async def check_daily_scheduled_messages():
             continue
 
         daily_messages_sent.add(cache_key)
-        try:
-            for recipient_id in recipient_list:
+        for recipient_id in recipient_list:
+            try:
                 await direct_message(recipient_id, message)
-        except Exception as e:
-            daily_messages_sent.discard(cache_key)
-            print(f"Error sending daily message to guild {guild_id}: {e}")
+            except discord.Forbidden as e:
+                print(f"Could not send daily message to user {recipient_id}: {e}")
+                try:
+                    await bot.db2.remove_recipient(user_id, guild_id, recipient_id)
+                except Exception as remove_error:
+                    print(f"Could not remove user {recipient_id} from the daily recipient list: {remove_error}")
+            except Exception as e:
+                print(f"Error sending daily message to user {recipient_id}: {e}")
 
 
 def looping_tasks():
@@ -191,11 +197,19 @@ async def set_message(interaction: discord.Interaction, *, text: str):
 
 @bot.tree.command(name="view_message", description="View current message")
 async def view_message(interaction: discord.Interaction):
-    message = await bot.db.get_universal_message(interaction.user.id, interaction.guild_id)
-    if message:
-        await interaction.response.send_message(f"Current message is {message}")
-    else:
-        await interaction.response.send_message("No current message. Use /set_message to set one.")
+    entry = await bot.db.get_entry(interaction.user.id, interaction.guild_id)
+    if not entry:
+        return await interaction.response.send_message("No scheduled message is saved. Use /set_message or /set_time to create one.", ephemeral=True)
+
+    await interaction.response.send_message(
+        "Scheduled message information:\n"
+        f"User ID: {entry.get('user_id')}\n"
+        f"Guild ID: {entry.get('guild_id')}\n"
+        f"Message: {entry.get('universal_message') or '(none)'}\n"
+        f"Recipients: {entry.get('recipient_list') or '(none)'}\n"
+        f"Scheduled time: {entry.get('timestamp') or '(not scheduled)'}",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="set_daily_message", description="Set the recurring daily greeting for this server")
@@ -243,11 +257,19 @@ async def view_daily_message(interaction: discord.Interaction):
     if interaction.guild_id is None:
         return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
 
-    message = await bot.db2.get_universal_message(interaction.user.id, interaction.guild_id)
-    if message:
-        await interaction.response.send_message(f"Current daily message is: {message}")
-    else:
-        await interaction.response.send_message("No daily message is set for this server yet. Use /set_daily_message to create one.")
+    entry = await bot.db2.get_entry(interaction.user.id, interaction.guild_id)
+    if not entry:
+        return await interaction.response.send_message("No daily message is saved. Use /set_daily_message or /set_daily_time to create one.", ephemeral=True)
+
+    await interaction.response.send_message(
+        "Daily message information:\n"
+        f"User ID: {entry.get('user_id')}\n"
+        f"Guild ID: {entry.get('guild_id')}\n"
+        f"Message: {entry.get('universal_message') or '(none)'}\n"
+        f"Recipients: {entry.get('recipient_list') or '(none)'}\n"
+        f"Scheduled time: {entry.get('timestamp') or '(not scheduled)'}",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="add_daily_recipient", description="Add someone to this server's daily mailing list")
@@ -346,6 +368,7 @@ async def set_time(interaction: discord.Interaction, hour: int, minute: int, tim
 
     scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
     await bot.db.set_hours(interaction.user.id, interaction.guild_id, scheduled_time)
-    await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} local or {hour:02d}:{minute:02d} UTC for your messages.")
+    timezone_label = normalized_timezone or scheduled_time.tzname() or "local timezone"
+    await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} in {timezone_label} for your messages.")
 
 bot.run(token)
