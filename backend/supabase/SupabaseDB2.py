@@ -222,3 +222,18 @@ class Database2:
 	async def delete_entry(self, user_id: int, guild_id: int):
 		"""Removes an entry for a user+guild entirely."""
 		await self.client.table("DB2_Repeated_Messages").delete().eq("user_id", user_id).eq("guild_id", guild_id).execute()
+
+	async def delete_user_data(self, user_id: int):
+		"""Remove a user's rows across all guilds and recipient-list references."""
+		response = await self.client.table("DB2_Repeated_Messages").select(
+			"user_id,guild_id,recipient_list"
+		).execute()
+
+		for row in response.data or []:
+			recipient_list = row.get("recipient_list") or []
+			if row.get("user_id") != user_id and user_id in recipient_list:
+				await self.client.table("DB2_Repeated_Messages").update({
+					"recipient_list": [recipient_id for recipient_id in recipient_list if recipient_id != user_id]
+				}).eq("user_id", row["user_id"]).eq("guild_id", row["guild_id"]).execute()
+
+		await self.client.table("DB2_Repeated_Messages").delete().eq("user_id", user_id).execute()

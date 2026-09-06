@@ -9,6 +9,10 @@ from backend.openrouterpy import OpenRouterRequests as OpenRouterRequests
 import os
 import logging
 import datetime
+import hmac
+import secrets
+import string
+import time
 from dotenv import load_dotenv
 from backend.supabase.SupabaseDB1 import Database
 from backend.supabase.SupabaseDB2 import Database2
@@ -32,6 +36,8 @@ intents = discord.Intents.all()
 # command prefix is !, change later because its popular
 bot = commands.Bot(command_prefix='!', intents=intents)
 daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
+pending_full_deletions: dict[int, tuple[str, float]] = {}
+full_deletion_lock = asyncio.Lock()
 database_health = {
     "db1": {"healthy": False, "error": "Not checked yet."},
     "db2": {"healthy": False, "error": "Not checked yet."},
@@ -162,6 +168,14 @@ async def clear_all_data(user_id: int, guild_id: int):
     """Remove all stored bot data for a user in a guild."""
     await bot.db.delete_entry(user_id, guild_id)
     await bot.db2.delete_entry(user_id, guild_id)
+
+
+async def delete_all_user_data(user_id: int):
+    """Remove all active bot data owned by a user across every guild."""
+    await asyncio.gather(
+        bot.db.delete_user_data(user_id),
+        bot.db2.delete_user_data(user_id),
+    )
 
 @bot.event
 async def on_ready():
@@ -364,6 +378,57 @@ async def clear_all_data_command(interaction: discord.Interaction):
 
     await clear_all_data(interaction.user.id, interaction.guild_id)
     await interaction.response.send_message("All of your saved data for this server has been deleted.", ephemeral=True)
+
+
+@bot.tree.command(name="begin_full_deletion", description="Generate a code to delete all of your saved bot data")
+async def begin_full_deletion(interaction: discord.Interaction):
+    code = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+    async with full_deletion_lock:
+        pending_full_deletions[interaction.user.id] = (code, time.monotonic() + 120)
+
+    await interaction.response.send_message(
+        f"This code expires in 2 minutes: `{code}`\n"
+        "Run `/confirm_full_deletion` with this code to permanently delete all of your saved bot data across every guild.",
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="confirm_full_deletion", description="Confirm deletion of all your saved bot data")
+@app_commands.describe(code="The 8-character code from /begin_full_deletion")
+async def confirm_full_deletion(interaction: discord.Interaction, code: str):
+    user_id = interaction.user.id
+    normalized_code = code.strip().upper()
+
+    async with full_deletion_lock:
+        pending = pending_full_deletions.get(user_id)
+        if pending is None or time.monotonic() >= pending[1]:
+            pending_full_deletions.pop(user_id, None)
+            return await interaction.response.send_message(
+                "No active deletion request exists. Run `/begin_full_deletion` to generate a new code.",
+                ephemeral=True,
+            )
+
+        if not hmac.compare_digest(normalized_code, pending[0]):
+            return await interaction.response.send_message(
+                "That code is incorrect. Your current code is still active.",
+                ephemeral=True,
+            )
+
+        pending_full_deletions.pop(user_id, None)
+
+    try:
+        await delete_all_user_data(user_id)
+    except Exception:
+        await interaction.response.send_message(
+            "Deletion could not be completed. Please start again with `/begin_full_deletion`.",
+            ephemeral=True,
+        )
+        raise
+
+    await interaction.response.send_message(
+        "All of your saved bot data across every guild has been deleted.",
+        ephemeral=True,
+    )
 
 @bot.tree.command(name="say_something", description="Get an AI generated response")
 @app_commands.describe(prompt="Prompt for the AI")
