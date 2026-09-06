@@ -33,8 +33,7 @@ handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w'
 
 intents = discord.Intents.all()
 
-# command prefix is !, change later because its popular
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 daily_messages_sent: set[tuple[int, str, datetime.date]] = set()
 pending_full_deletions: dict[int, tuple[str, float]] = {}
 full_deletion_lock = asyncio.Lock()
