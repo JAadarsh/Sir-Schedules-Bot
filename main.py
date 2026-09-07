@@ -1,4 +1,8 @@
-"""Start the Discord bot."""
+"""
+v0.2.3
+Copyright Aadarsh Joshi 2026
+All rights reserved.
+"""
 
 from bot.app import create_bot
 from bot.config import load_config
