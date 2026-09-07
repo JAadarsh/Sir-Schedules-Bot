@@ -1,7 +1,5 @@
 # Sir Schedule's Bot
 
-#### 
-
 ## Overview
 
 
@@ -42,11 +40,15 @@ Currently in development, but is now available!
 
 
 
-## Rights
+## Rights \& Notices
 
 
 
-Feel free to use this project while citing proper credit. Reach out to inquire about for-profit usage in any capacity.
+Feel free to use this project while citing credit. Reach out to inquire about for-profit usage in any capacity.
+
+
+
+Generative artificial intelligence was utilized to accelerate workflows (not vibe-coded).
 
 
 
