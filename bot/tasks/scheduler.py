@@ -18,6 +18,12 @@ class Scheduler:
             for cache_key in self.bot.state.daily_messages_sent
             if cache_key[2] == today
         )
+        current_minute = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
+        self.bot.state.group_messages_sent.intersection_update(
+            cache_key
+            for cache_key in self.bot.state.group_messages_sent
+            if cache_key[2] == current_minute
+        )
 
     @tasks.loop(seconds=10)
     async def check_scheduled_messages(self):
@@ -71,10 +77,45 @@ class Scheduler:
                     entry["guild_id"],
                 )
 
+    @tasks.loop(seconds=10)
+    async def check_group_scheduled_messages(self):
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            response = await self.bot.db3.get_scheduled_messages(now)
+        except Exception as error:
+            self.bot.state.database_health["db3"] = {"healthy": False, "error": str(error)}
+            print(f"Error fetching group scheduled messages: {error}")
+            return
+
+        self.bot.state.database_health["db3"] = {"healthy": True, "error": None}
+        current_minute = now.replace(second=0, microsecond=0)
+        for entry in response:
+            message = entry["universal_message"]
+            cache_key = (entry["guild_id"], message, current_minute)
+            if not message or not message.strip() or cache_key in self.bot.state.group_messages_sent:
+                continue
+
+            guild = self.bot.get_guild(entry["guild_id"])
+            if guild is None:
+                continue
+
+            self.bot.state.group_messages_sent.add(cache_key)
+            for role_id in entry.get("recipient_list") or []:
+                role = guild.get_role(role_id)
+                if role is None:
+                    continue
+                for member in role.members:
+                    try:
+                        await self.delivery.direct_message(member.id, message)
+                    except Exception as error:
+                        print(f"Error sending group message to user {member.id}: {error}")
+            await self.bot.db3.increment_times_sent(entry["user_id"], entry["guild_id"])
+
     def start(self):
         for loop in (
             self.check_scheduled_messages,
             self.check_daily_scheduled_messages,
+            self.check_group_scheduled_messages,
             self.refresh_daily_message_cache,
         ):
             if not loop.is_running():
@@ -84,6 +125,7 @@ class Scheduler:
         for loop in (
             self.check_scheduled_messages,
             self.check_daily_scheduled_messages,
+            self.check_group_scheduled_messages,
             self.refresh_daily_message_cache,
         ):
             loop.cancel()

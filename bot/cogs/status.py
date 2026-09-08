@@ -10,7 +10,7 @@ class StatusCog(commands.Cog):
     @app_commands.command(name="database_status", description="Show the latest database health status")
     async def database_status(self, interaction: discord.Interaction):
         status_lines = []
-        for label, key in (("One-time messages", "db1"), ("Daily messages", "db2")):
+        for label, key in (("One-time messages", "db1"), ("Daily messages", "db2"), ("Group repeated messages", "db3")):
             state = self.bot.state.database_health[key]
             if state["healthy"]:
                 status_lines.append(f"{label}: healthy")

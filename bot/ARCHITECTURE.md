@@ -72,8 +72,8 @@ Startup fails early with a `RuntimeError` if any required value is missing.
 
 `bot/app.py` contains `GreeterBot`, the custom `commands.Bot` subclass. Its `setup_hook()` performs one-time asynchronous initialization:
 
-1. Create the `Database` and `Database2` Supabase access objects.
-2. Attempt to connect both database clients.
+1. Create the `Database`, `Database2`, and `Database3` Supabase access objects.
+2. Attempt to connect all database clients.
 3. Register all command cogs.
 4. Synchronize slash commands with Discord.
 5. Create and start the `Scheduler`.
@@ -110,25 +110,20 @@ Commands are grouped into Discord cogs under `bot/cogs/`.
 
 ### `OneTimeMessagesCog`
 
-Located in `bot/cogs/messages.py`. It owns the one-time message workflow:
+Located in `bot/cogs/messages.py`. It owns the shared message configuration workflow:
 
-- `/set_message`
+- `/schedule_message`: configures one-time, daily, or group-repeated messages, including text, time, timezone, and repeated days for DB3.
 - `/view_message`
 - `/add_recipient`
 - `/remove_recipient`
 - `/clear_recipients`
-- `/set_time`
-- `/clear_time`
 
-It uses `Database` from `backend/supabase/SupabaseDB1.py`. Timezone input is normalized and validated through `backend/timezones.py` before a timezone-aware timestamp is stored.
+It uses the database selected by `message_type`. Timezone input is normalized and validated through `backend/timezones.py` before a timezone-aware timestamp is stored.
 
 ### `DailyMessagesCog`
 
 Also located in `bot/cogs/messages.py`. It owns the recurring daily message workflow:
 
-- `/set_daily_message`
-- `/set_daily_time`
-- `/clear_daily_time`
 - `/view_daily_message`
 - `/add_daily_recipient`
 - `/remove_daily_recipient`
@@ -136,7 +131,7 @@ Also located in `bot/cogs/messages.py`. It owns the recurring daily message work
 
 It uses `Database2` from `backend/supabase/SupabaseDB2.py`.
 
-The two message cogs share the timezone autocomplete callback, but they use separate database tables and scheduling records.
+The message cogs share the timezone autocomplete callback, while each scheduling type uses its own database table and recipient semantics. `GroupMessagesCog` provides role-based recipient-list manipulation for DB3.
 
 ### `PrivacyCog`
 
@@ -217,7 +212,7 @@ Located in `bot/services/data.py`. It coordinates deletion across the two active
 - `clear_guild_data()` deletes one user's records for one guild.
 - `delete_user_data()` deletes the user's records across all guilds concurrently with `asyncio.gather()`.
 
-The service does not know about Discord response formatting or slash-command registration.
+The service does not know about Discord response formatting or slash-command registration. It clears DB1, DB2, and DB3 data for both guild-scoped and full-user deletion workflows.
 
 ## Persistence Layer
 
@@ -225,7 +220,7 @@ The persistence classes remain under `backend/supabase/` and communicate with Su
 
 - `SupabaseDB1.Database` manages `DB1_Message_Once`, including one-time messages, recipients, timestamps, and sent-message cleanup.
 - `SupabaseDB2.Database2` manages `DB2_Repeated_Messages`, including recurring messages, recipients, and timestamps.
-- `SupabaseDB3.Database3` contains the separate role-based repeated-message database interface. It is available in the backend but is not currently connected or registered by `GreeterBot`.
+- `SupabaseDB3.Database3` manages role-based repeated messages, including its day bitmask, send count, timestamps, and role recipients.
 
 The database classes are responsible for persistence and timestamp filtering. They do not register Discord commands or send messages.
 

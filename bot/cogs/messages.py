@@ -19,19 +19,74 @@ class OneTimeMessagesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="set_message", description="Set your own custom greeting message!")
-    @app_commands.describe(text="The custom sentence or phrase you want to save")
-    async def set_message(self, interaction: discord.Interaction, *, text: str):
+    @app_commands.command(name="schedule_message", description="Create or update a scheduled message")
+    @app_commands.describe(
+        message_type="Send once or repeat daily",
+        text="The message to send",
+        hour="Hour (0-23)",
+        minute="Minute (0-59)",
+        days_repeated="DB3 bitmask: Sunday=1, Monday=2, through Saturday=64",
+        timezone="Timezone, for example Los Angeles",
+    )
+    @app_commands.choices(message_type=[
+        app_commands.Choice(name="One time", value="one_time"),
+        app_commands.Choice(name="Daily", value="daily"),
+        app_commands.Choice(name="Group repeated", value="group_repeated"),
+    ])
+    @app_commands.autocomplete(timezone=timezone_autocomplete)
+    async def schedule_message(
+        self,
+        interaction: discord.Interaction,
+        message_type: app_commands.Choice[str],
+        text: str,
+        hour: int,
+        minute: int,
+        days_repeated: int = 127,
+        timezone: str | None = None,
+    ):
+        if interaction.guild_id is None:
+            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         if len(text) > 1500:
             return await interaction.response.send_message("Message is too long. Please keep it under 1500 characters.", ephemeral=True)
-        await self.bot.db.set_universal_message(interaction.user.id, interaction.guild_id, text)
-        await interaction.response.send_message("Universal message updated.")
+        if not text.strip():
+            return await interaction.response.send_message("Message cannot be empty.", ephemeral=True)
+        if not (0 <= hour < 24) or not (0 <= minute < 60):
+            return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
+        if not 0 <= days_repeated <= 127:
+            return await interaction.response.send_message("Invalid repeated-day mask. Use a value from 0 to 127.", ephemeral=True)
+
+        normalized_timezone = normalize_timezone_name(timezone) if timezone else None
+        if timezone and normalized_timezone not in COMMON_TIMEZONES:
+            return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
+
+        scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
+        user_id = interaction.user.id
+        guild_id = interaction.guild_id
+
+        if message_type.value == "daily":
+            await self.bot.db2.set_universal_message(user_id, guild_id, text)
+            await self.bot.db2.set_timestamp(user_id, guild_id, scheduled_time)
+            schedule_label = "daily"
+        elif message_type.value == "group_repeated":
+            await self.bot.db3.set_universal_message(user_id, guild_id, text)
+            await self.bot.db3.set_timestamp(user_id, guild_id, scheduled_time)
+            await self.bot.db3.set_days_repeated(user_id, guild_id, days_repeated)
+            schedule_label = "group repeated"
+        else:
+            await self.bot.db.set_universal_message(user_id, guild_id, text)
+            await self.bot.db.set_hours(user_id, guild_id, scheduled_time)
+            schedule_label = "one-time"
+
+        timezone_label = normalized_timezone or scheduled_time.tzname() or "local timezone"
+        await interaction.response.send_message(
+            f"Your {schedule_label} message was scheduled for {hour:02d}:{minute:02d} in {timezone_label}."
+        )
 
     @app_commands.command(name="view_message", description="View current message")
     async def view_message(self, interaction: discord.Interaction):
         entry = await self.bot.db.get_entry(interaction.user.id, interaction.guild_id)
         if not entry:
-            return await interaction.response.send_message("No scheduled message is saved. Use /set_message or /set_time to create one.", ephemeral=True)
+            return await interaction.response.send_message("No scheduled message is saved. Use /schedule_message to create one.", ephemeral=True)
         await interaction.response.send_message(
             "Scheduled message information:\n"
             f"User ID: {entry.get('user_id')}\n"
@@ -59,63 +114,9 @@ class OneTimeMessagesCog(commands.Cog):
         await self.bot.db.clear_recipients(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message("Recipient list cleared.")
 
-    @app_commands.command(name="set_time", description="Set a time for the bot to send a message")
-    @app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
-    @app_commands.autocomplete(timezone=timezone_autocomplete)
-    async def set_time(self, interaction: discord.Interaction, hour: int, minute: int, timezone: str | None = None):
-        if not (0 <= hour < 24) or not (0 <= minute < 60):
-            return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
-        normalized_timezone = normalize_timezone_name(timezone) if timezone else None
-        if timezone and normalized_timezone not in COMMON_TIMEZONES:
-            return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
-        scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
-        await self.bot.db.set_hours(interaction.user.id, interaction.guild_id, scheduled_time)
-        timezone_label = normalized_timezone or scheduled_time.tzname() or "local timezone"
-        await interaction.response.send_message(f"Time set to {hour:02d}:{minute:02d} in {timezone_label} for your messages.")
-
-    @app_commands.command(name="clear_time", description="Clear the scheduled one-time message time")
-    async def clear_time(self, interaction: discord.Interaction):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        await self.bot.db.clear_timestamp(interaction.user.id, interaction.guild_id)
-        await interaction.response.send_message("Scheduled one-time message time cleared.")
-
-
 class DailyMessagesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    @app_commands.command(name="set_daily_message", description="Set the recurring daily greeting for this server")
-    @app_commands.describe(text="The recurring message to send every day")
-    async def set_daily_message(self, interaction: discord.Interaction, *, text: str):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        if len(text) > 1500:
-            return await interaction.response.send_message("Message is too long. Please keep it under 1500 characters.", ephemeral=True)
-        await self.bot.db2.set_universal_message(interaction.user.id, interaction.guild_id, text)
-        await interaction.response.send_message("Daily server message updated.")
-
-    @app_commands.command(name="set_daily_time", description="Set the time for the recurring daily message")
-    @app_commands.describe(hour="Hour (0-23)", minute="Minute (0-59)", timezone="Timezone, for example Los Angeles")
-    @app_commands.autocomplete(timezone=timezone_autocomplete)
-    async def set_daily_time(self, interaction: discord.Interaction, hour: int, minute: int, timezone: str | None = None):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        if not (0 <= hour < 24) or not (0 <= minute < 60):
-            return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
-        normalized_timezone = normalize_timezone_name(timezone) if timezone else None
-        if timezone and normalized_timezone not in COMMON_TIMEZONES:
-            return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
-        scheduled_time = get_local_scheduled_datetime(hour, minute, timezone_name=normalized_timezone)
-        await self.bot.db2.set_timestamp(interaction.user.id, interaction.guild_id, scheduled_time)
-        await interaction.response.send_message(f"Daily message time set to {hour:02d}:{minute:02d}.")
-
-    @app_commands.command(name="clear_daily_time", description="Clear the recurring daily message time")
-    async def clear_daily_time(self, interaction: discord.Interaction):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        await self.bot.db2.clear_timestamp(interaction.user.id, interaction.guild_id)
-        await interaction.response.send_message("Daily message time cleared.")
 
     @app_commands.command(name="view_daily_message", description="View the recurring daily message for this server")
     async def view_daily_message(self, interaction: discord.Interaction):
@@ -123,7 +124,7 @@ class DailyMessagesCog(commands.Cog):
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         entry = await self.bot.db2.get_entry(interaction.user.id, interaction.guild_id)
         if not entry:
-            return await interaction.response.send_message("No daily message is saved. Use /set_daily_message or /set_daily_time to create one.", ephemeral=True)
+            return await interaction.response.send_message("No daily message is saved. Use /schedule_message with Daily selected to create one.", ephemeral=True)
         await interaction.response.send_message(
             "Daily message information:\n"
             f"User ID: {entry.get('user_id')}\n"
@@ -156,3 +157,31 @@ class DailyMessagesCog(commands.Cog):
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         await self.bot.db2.clear_recipients(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message("Server daily recipient list cleared.")
+
+
+class GroupMessagesCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="add_group_recipient", description="Add a role to a group message recipient list")
+    @app_commands.describe(recipient="Role whose members should receive the group message")
+    async def add_group_recipient(self, interaction: discord.Interaction, recipient: discord.Role):
+        if interaction.guild_id is None:
+            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        await self.bot.db3.add_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+        await interaction.response.send_message(f"The {recipient.name} role has been added to the group recipient list.")
+
+    @app_commands.command(name="remove_group_recipient", description="Remove a role from a group message recipient list")
+    @app_commands.describe(recipient="Role to remove from the group message recipient list")
+    async def remove_group_recipient(self, interaction: discord.Interaction, recipient: discord.Role):
+        if interaction.guild_id is None:
+            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        await self.bot.db3.remove_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+        await interaction.response.send_message(f"The {recipient.name} role has been removed from the group recipient list.")
+
+    @app_commands.command(name="clear_group_recipients", description="Clear the group message recipient list")
+    async def clear_group_recipients(self, interaction: discord.Interaction):
+        if interaction.guild_id is None:
+            return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        await self.bot.db3.clear_recipients(interaction.user.id, interaction.guild_id)
+        await interaction.response.send_message("Group recipient list cleared.")

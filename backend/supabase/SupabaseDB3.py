@@ -34,12 +34,16 @@ class Database3:
         recipients: list[int] | None = None,
         message: str = "",
         timestamp: datetime.datetime | None = None,
+        days_repeated: int = 0,
+        times_sent: int = 0,
         entry_id: int | None = None,
     ):
-        """Upsert a role-based repeated-message row with user_id/guild_id, recipients, message, and optional timestamp/id."""
+        """Upsert a role-based repeated-message row with its schedule and send count."""
 
         if recipients is None:
             recipients = []
+        self._validate_days_repeated(days_repeated)
+        self._validate_times_sent(times_sent)
 
         ts = None
         if isinstance(timestamp, datetime.datetime):
@@ -53,12 +57,24 @@ class Database3:
             "recipient_list": recipients,
             "universal_message": message or "",
             "timestamp": ts,
+            "days_repeated": days_repeated,
+            "times_sent": times_sent,
         }
 
         if entry_id is not None:
             payload["id"] = entry_id
 
         await self.client.table("DB3_Group_Repeated_Messages").upsert(payload).execute()
+
+    @staticmethod
+    def _validate_days_repeated(days_repeated: int):
+        if not isinstance(days_repeated, int) or not 0 <= days_repeated <= 127:
+            raise ValueError("days_repeated must be an integer between 0 and 127")
+
+    @staticmethod
+    def _validate_times_sent(times_sent: int):
+        if not isinstance(times_sent, int) or not -(2**63) <= times_sent <= 2**63 - 1:
+            raise ValueError("times_sent must fit in a PostgreSQL int8")
 
     async def get_entry(self, user_id: int, guild_id: int) -> dict | None:
         """Return all stored repeated-message data for a user in a guild."""
@@ -131,6 +147,46 @@ class Database3:
             return []
         return response.data[0].get("recipient_list") or []
 
+    async def set_days_repeated(self, user_id: int, guild_id: int, days_repeated: int):
+        """Set the Sunday-to-Saturday repeated-day bitmask."""
+        self._validate_days_repeated(days_repeated)
+        await self.client.table("DB3_Group_Repeated_Messages").upsert({
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "days_repeated": days_repeated,
+        }).execute()
+
+    async def get_days_repeated(self, user_id: int, guild_id: int) -> int:
+        """Return the repeated-day bitmask, defaulting to no repeated days."""
+        response = await self.client.table("DB3_Group_Repeated_Messages").select("days_repeated").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        if not response.data:
+            return 0
+        return response.data[0].get("days_repeated") or 0
+
+    async def increment_times_sent(self, user_id: int, guild_id: int) -> int:
+        """Increment and return the stored send count for a row."""
+        response = await self.client.table("DB3_Group_Repeated_Messages").select("times_sent").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+        current_count = response.data[0].get("times_sent") if response.data else 0
+        current_count = current_count or 0
+        self._validate_times_sent(current_count)
+        new_count = current_count + 1
+        self._validate_times_sent(new_count)
+        await self.client.table("DB3_Group_Repeated_Messages").upsert({
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "times_sent": new_count,
+        }).execute()
+        return new_count
+
+    async def set_times_sent(self, user_id: int, guild_id: int, times_sent: int):
+        """Set the stored send count for a row."""
+        self._validate_times_sent(times_sent)
+        await self.client.table("DB3_Group_Repeated_Messages").upsert({
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "times_sent": times_sent,
+        }).execute()
+
     async def clear_recipients(self, user_id: int, guild_id: int):
         """Clear the role recipient list while preserving the stored message and schedule."""
         response = await self.client.table("DB3_Group_Repeated_Messages").select("universal_message,timestamp").eq("user_id", user_id).eq("guild_id", guild_id).execute()
@@ -177,7 +233,7 @@ class Database3:
     async def get_scheduled_messages(self, now: datetime.datetime | None = None) -> list:
         """Return rows where stored timestamp hour/minute equals now's hour/minute (UTC default)."""
         response = await self.client.table("DB3_Group_Repeated_Messages").select(
-            "user_id,guild_id,timestamp,universal_message,recipient_list"
+            "user_id,guild_id,timestamp,universal_message,recipient_list,days_repeated,times_sent"
         ).execute()
 
         if not response.data:
@@ -213,6 +269,7 @@ class Database3:
             if (
                 scheduled_in_now_tz.hour == now_in_same_tz.hour
                 and scheduled_in_now_tz.minute == now_in_same_tz.minute
+                and (row.get("days_repeated") or 0) & (1 << ((now_in_same_tz.weekday() + 1) % 7))
             ):
                 due.append(row)
 
@@ -221,3 +278,7 @@ class Database3:
     async def delete_entry(self, user_id: int, guild_id: int):
         """Removes an entry for a user+guild entirely."""
         await self.client.table("DB3_Group_Repeated_Messages").delete().eq("user_id", user_id).eq("guild_id", guild_id).execute()
+
+    async def delete_user_data(self, user_id: int):
+        """Remove a user's group-message rows across all guilds."""
+        await self.client.table("DB3_Group_Repeated_Messages").delete().eq("user_id", user_id).execute()

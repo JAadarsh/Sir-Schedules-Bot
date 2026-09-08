@@ -5,8 +5,9 @@ from discord.ext import commands
 
 from backend.supabase.SupabaseDB1 import Database
 from backend.supabase.SupabaseDB2 import Database2
+from backend.supabase.SupabaseDB3 import Database3
 from bot.cogs.ai import AICog
-from bot.cogs.messages import DailyMessagesCog, OneTimeMessagesCog
+from bot.cogs.messages import DailyMessagesCog, GroupMessagesCog, OneTimeMessagesCog
 from bot.cogs.privacy import PrivacyCog
 from bot.cogs.status import StatusCog
 from bot.config import Config
@@ -22,15 +23,18 @@ class GreeterBot(commands.Bot):
         self.state = AppState()
         self.db = None
         self.db2 = None
+        self.db3 = None
         self.scheduler = None
 
     async def setup_hook(self):
         self.db = Database(self.config.supabase_url, self.config.supabase_key)
         self.db2 = Database2(self.config.supabase_url, self.config.supabase_key)
+        self.db3 = Database3(self.config.supabase_url, self.config.supabase_key)
         await self._connect_database(self.db, "db1", "Database connected.")
         await self._connect_database(self.db2, "db2", "Daily schedule database connected.")
+        await self._connect_database(self.db3, "db3", "Group repeated-message database connected.")
 
-        for cog in (StatusCog, OneTimeMessagesCog, DailyMessagesCog, PrivacyCog, AICog):
+        for cog in (StatusCog, OneTimeMessagesCog, DailyMessagesCog, GroupMessagesCog, PrivacyCog, AICog):
             await self.add_cog(cog(self))
 
         try:
