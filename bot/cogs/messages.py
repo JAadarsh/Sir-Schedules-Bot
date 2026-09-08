@@ -15,6 +15,61 @@ async def timezone_autocomplete(interaction: discord.Interaction, current: str):
     return matches[:25]
 
 
+DAY_OPTIONS = (
+    ("Sunday", "0", 1),
+    ("Monday", "1", 2),
+    ("Tuesday", "2", 4),
+    ("Wednesday", "3", 8),
+    ("Thursday", "4", 16),
+    ("Friday", "5", 32),
+    ("Saturday", "6", 64),
+)
+
+
+class GroupDaysView(discord.ui.View):
+    def __init__(self, owner_id: int, db3, user_id: int, guild_id: int, text: str, scheduled_time):
+        super().__init__(timeout=120)
+        self.owner_id = owner_id
+        self.db3 = db3
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.text = text
+        self.scheduled_time = scheduled_time
+
+        self.day_select = discord.ui.Select(
+            placeholder="Select one or more days",
+            min_values=1,
+            max_values=len(DAY_OPTIONS),
+            options=[discord.SelectOption(label=label, value=value) for label, value, _ in DAY_OPTIONS],
+        )
+        self.day_select.callback = self.select_days
+        self.add_item(self.day_select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who started this command can use this menu.", ephemeral=True)
+            return False
+        return True
+
+    async def select_days(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Save schedule", style=discord.ButtonStyle.primary)
+    async def save_schedule(self, interaction: discord.Interaction, button: discord.ui.Button):
+        selected_values = set(self.day_select.values)
+        days_repeated = sum(bit for _, value, bit in DAY_OPTIONS if value in selected_values)
+        await self.db3.set_universal_message(self.user_id, self.guild_id, self.text)
+        await self.db3.set_timestamp(self.user_id, self.guild_id, self.scheduled_time)
+        await self.db3.set_days_repeated(self.user_id, self.guild_id, days_repeated)
+
+        selected_days = [label for label, value, _ in DAY_OPTIONS if value in selected_values]
+        self.stop()
+        await interaction.response.edit_message(
+            content=f"Your group repeated message was scheduled for {', '.join(selected_days)}.",
+            view=None,
+        )
+
+
 class OneTimeMessagesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -25,7 +80,6 @@ class OneTimeMessagesCog(commands.Cog):
         text="The message to send",
         hour="Hour (0-23)",
         minute="Minute (0-59)",
-        days_repeated="DB3 bitmask: Sunday=1, Monday=2, through Saturday=64",
         timezone="Timezone, for example Los Angeles",
     )
     @app_commands.choices(message_type=[
@@ -41,7 +95,6 @@ class OneTimeMessagesCog(commands.Cog):
         text: str,
         hour: int,
         minute: int,
-        days_repeated: int = 127,
         timezone: str | None = None,
     ):
         if interaction.guild_id is None:
@@ -52,9 +105,6 @@ class OneTimeMessagesCog(commands.Cog):
             return await interaction.response.send_message("Message cannot be empty.", ephemeral=True)
         if not (0 <= hour < 24) or not (0 <= minute < 60):
             return await interaction.response.send_message("Invalid time format. Please use HH:MM in 24-hour format.", ephemeral=True)
-        if not 0 <= days_repeated <= 127:
-            return await interaction.response.send_message("Invalid repeated-day mask. Use a value from 0 to 127.", ephemeral=True)
-
         normalized_timezone = normalize_timezone_name(timezone) if timezone else None
         if timezone and normalized_timezone not in COMMON_TIMEZONES:
             return await interaction.response.send_message("Timezone not recognized. Try something like 'Los Angeles' or 'America/Los_Angeles'.", ephemeral=True)
@@ -68,10 +118,12 @@ class OneTimeMessagesCog(commands.Cog):
             await self.bot.db2.set_timestamp(user_id, guild_id, scheduled_time)
             schedule_label = "daily"
         elif message_type.value == "group_repeated":
-            await self.bot.db3.set_universal_message(user_id, guild_id, text)
-            await self.bot.db3.set_timestamp(user_id, guild_id, scheduled_time)
-            await self.bot.db3.set_days_repeated(user_id, guild_id, days_repeated)
-            schedule_label = "group repeated"
+            await interaction.response.send_message(
+                "Select the days for this group repeated message, then press Save schedule.",
+                view=GroupDaysView(interaction.user.id, self.bot.db3, user_id, guild_id, text, scheduled_time),
+                ephemeral=True,
+            )
+            return
         else:
             await self.bot.db.set_universal_message(user_id, guild_id, text)
             await self.bot.db.set_hours(user_id, guild_id, scheduled_time)
