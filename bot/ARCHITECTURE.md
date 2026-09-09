@@ -219,7 +219,7 @@ The service does not know about Discord response formatting or slash-command reg
 The persistence classes remain under `backend/supabase/` and communicate with Supabase using its asynchronous client.
 
 - `SupabaseDB1.Database` manages `DB1_Message_Once`, including one-time messages, recipients, timestamps, and sent-message cleanup.
-- `SupabaseDB2.Database2` manages `DB2_Repeated_Messages`, including recurring messages, recipients, and timestamps.
+- `SupabaseDB2.Database2` manages `DB2_Repeated_Messages`, including recurring messages, recipients, timestamps, and the `int8` `index` primary key that allows multiple messages per user and guild.
 - `SupabaseDB3.Database3` manages role-based repeated messages, including its day bitmask, send count, timestamps, and role recipients.
 
 The database classes are responsible for persistence and timestamp filtering. They do not register Discord commands or send messages.

@@ -114,8 +114,12 @@ class OneTimeMessagesCog(commands.Cog):
         guild_id = interaction.guild_id
 
         if message_type.value == "daily":
-            await self.bot.db2.set_universal_message(user_id, guild_id, text)
-            await self.bot.db2.set_timestamp(user_id, guild_id, scheduled_time)
+            message_index = await self.bot.db2.create_entry(
+                user_id,
+                guild_id,
+                message=text,
+                timestamp=scheduled_time,
+            )
             schedule_label = "daily"
         elif message_type.value == "group_repeated":
             await interaction.response.send_message(
@@ -132,6 +136,7 @@ class OneTimeMessagesCog(commands.Cog):
         timezone_label = normalized_timezone or scheduled_time.tzname() or "local timezone"
         await interaction.response.send_message(
             f"Your {schedule_label} message was scheduled for {hour:02d}:{minute:02d} in {timezone_label}."
+            + (f" Message index: {message_index}." if message_type.value == "daily" and message_index is not None else "")
         )
 
     @app_commands.command(name="view_message", description="View current message")
@@ -174,40 +179,42 @@ class DailyMessagesCog(commands.Cog):
     async def view_daily_message(self, interaction: discord.Interaction):
         if interaction.guild_id is None:
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        entry = await self.bot.db2.get_entry(interaction.user.id, interaction.guild_id)
-        if not entry:
+        entries = await self.bot.db2.get_entries(interaction.user.id, interaction.guild_id)
+        if not entries:
             return await interaction.response.send_message("No daily message is saved. Use /schedule_message with Daily selected to create one.", ephemeral=True)
         await interaction.response.send_message(
-            "Daily message information:\n"
-            f"User ID: {entry.get('user_id')}\n"
-            f"Guild ID: {entry.get('guild_id')}\n"
-            f"Message: {entry.get('universal_message') or '(none)'}\n"
-            f"Recipients: {entry.get('recipient_list') or '(none)'}\n"
-            f"Scheduled time: {entry.get('timestamp') or '(not scheduled)' }",
+            "Daily messages:\n" + "\n\n".join(
+                f"Index: {entry.get('index')}\n"
+                f"Message: {entry.get('universal_message') or '(none)'}\n"
+                f"Recipients: {entry.get('recipient_list') or '(none)'}\n"
+                f"Scheduled time: {entry.get('timestamp') or '(not scheduled)'}"
+                for entry in entries
+            ),
             ephemeral=True,
         )
 
     @app_commands.command(name="add_daily_recipient", description="Add someone to this server's daily mailing list")
-    @app_commands.describe(recipient="User to receive the daily message")
-    async def add_daily_recipient(self, interaction: discord.Interaction, recipient: discord.User):
+    @app_commands.describe(recipient="User to receive the daily message", message_index="Index of the daily message")
+    async def add_daily_recipient(self, interaction: discord.Interaction, recipient: discord.User, message_index: int):
         if interaction.guild_id is None:
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        await self.bot.db2.add_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+        await self.bot.db2.add_recipient(interaction.user.id, interaction.guild_id, recipient.id, message_index)
         await interaction.response.send_message(f"{recipient.name} has been added to the server's daily recipient list.")
 
     @app_commands.command(name="remove_daily_recipient", description="Remove someone from this server's daily mailing list")
-    @app_commands.describe(recipient="User to remove from the server's daily message list")
-    async def remove_daily_recipient(self, interaction: discord.Interaction, recipient: discord.User):
+    @app_commands.describe(recipient="User to remove from the server's daily message list", message_index="Index of the daily message")
+    async def remove_daily_recipient(self, interaction: discord.Interaction, recipient: discord.User, message_index: int):
         if interaction.guild_id is None:
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        await self.bot.db2.remove_recipient(interaction.user.id, interaction.guild_id, recipient.id)
+        await self.bot.db2.remove_recipient(interaction.user.id, interaction.guild_id, recipient.id, message_index)
         await interaction.response.send_message(f"{recipient.name} has been removed from the server's daily recipient list.")
 
-    @app_commands.command(name="clear_daily_recipients", description="Clear the server's daily recipient list")
-    async def clear_daily_recipients(self, interaction: discord.Interaction):
+    @app_commands.command(name="clear_daily_recipients", description="Clear a daily message recipient list")
+    @app_commands.describe(message_index="Index of the daily message")
+    async def clear_daily_recipients(self, interaction: discord.Interaction, message_index: int):
         if interaction.guild_id is None:
             return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        await self.bot.db2.clear_recipients(interaction.user.id, interaction.guild_id)
+        await self.bot.db2.clear_recipients(interaction.user.id, interaction.guild_id, message_index)
         await interaction.response.send_message("Server daily recipient list cleared.")
 
 
