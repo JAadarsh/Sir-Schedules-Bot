@@ -109,7 +109,9 @@ class Scheduler:
                         await self.delivery.direct_message(member.id, message)
                     except Exception as error:
                         print(f"Error sending group message to user {member.id}: {error}")
-            await self.bot.db3.increment_times_sent(entry["user_id"], entry["guild_id"])
+            send_count = await self.bot.db3.increment_times_sent(entry["user_id"], entry["guild_id"])
+            if send_count > 7:
+                await self.bot.db3.delete_entry(entry["user_id"], entry["guild_id"])
 
     def start(self):
         for loop in (
