@@ -20,11 +20,17 @@ class Database2:
 		"""Establish async Supabase client using URL and key."""
 		self.client = await acreate_client(self.url, self.key)
 
-	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None, entry_id: int | None = None, message_index: int | None = None):
-		"""Insert a repeated-message row; the database generates its int8 index when omitted."""
+	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None):
+		"""Insert a repeated-message row using the next available index from 0 through 6."""
 
 		if recipients is None:
 			recipients = []
+
+		existing = await self.client.table("DB2_Repeated_Messages").select("index").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		used_indexes = {row.get("index") for row in existing.data or []}
+		message_index = next((index for index in range(7) if index not in used_indexes), None)
+		if message_index is None:
+			raise ValueError("A user and guild can have at most 7 daily messages")
 
 		ts = None
 		if isinstance(timestamp, datetime.datetime):
@@ -35,19 +41,13 @@ class Database2:
 		payload = {
 			"user_id": user_id,
 			"guild_id": guild_id,
+			"index": message_index,
 			"recipient_list": recipients,
 			"universal_message": message or "",
 			"timestamp": ts,
 		}
 
-		if message_index is not None:
-			payload["index"] = message_index
-		elif entry_id is not None:
-			payload["index"] = entry_id
-
-		response = await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
-		if response.data:
-			return response.data[0].get("index")
+		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 		return message_index
 
 	async def get_entries(self, user_id: int, guild_id: int) -> list[dict]:

@@ -75,6 +75,7 @@ class Scheduler:
                     message,
                     entry["user_id"],
                     entry["guild_id"],
+                    entry["index"],
                 )
 
     @tasks.loop(seconds=10)
