@@ -15,9 +15,10 @@ class DeliveryService:
         await user.send(message)
         return True
 
-    async def send_daily_message(self, user_id: int, message: str, owner_id: int, guild_id: int, message_index: int):
+    async def send_daily_message(self, user_id: int, message: str, owner_id: int, guild_id: int, message_index: int) -> bool:
         try:
             await self.direct_message(user_id, message)
+            return True
         except discord.Forbidden as error:
             print(f"Could not send daily message to user {user_id}: {error}")
             try:
@@ -26,3 +27,4 @@ class DeliveryService:
                 print(f"Could not remove user {user_id} from the daily recipient list: {remove_error}")
         except Exception as error:
             print(f"Error sending daily message to user {user_id}: {error}")
+        return False

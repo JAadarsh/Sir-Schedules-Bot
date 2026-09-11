@@ -20,7 +20,7 @@ class Database2:
 		"""Establish async Supabase client using URL and key."""
 		self.client = await acreate_client(self.url, self.key)
 
-	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None):
+	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None, times_sent: int = 0):
 		"""Insert a repeated-message row using the next available index from 0 through 6."""
 
 		if recipients is None:
@@ -45,6 +45,7 @@ class Database2:
 			"recipient_list": recipients,
 			"universal_message": message or "",
 			"timestamp": ts,
+			"times_sent": times_sent,
 		}
 
 		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
@@ -153,6 +154,22 @@ class Database2:
 			return []
 		return response.data[0].get("recipient_list") or []
 
+	async def increment_times_sent(self, user_id: int, guild_id: int, message_index: int) -> int:
+		"""Increment and return the stored send count for one daily message."""
+		response = await self.client.table("DB2_Repeated_Messages").select("times_sent").eq("user_id", user_id).eq("guild_id", guild_id).eq("index", message_index).execute()
+		current_count = response.data[0].get("times_sent") if response.data else 0
+		current_count = current_count or 0
+		if not isinstance(current_count, int):
+			raise ValueError("times_sent must be an integer")
+		new_count = current_count + 1
+		await self.client.table("DB2_Repeated_Messages").upsert({
+			"user_id": user_id,
+			"guild_id": guild_id,
+			"index": message_index,
+			"times_sent": new_count,
+		}).execute()
+		return new_count
+
 	async def clear_recipients(self, user_id: int, guild_id: int, message_index: int | None = None):
 		"""Clear the recipient list while preserving the stored message and schedule."""
 		query = self.client.table("DB2_Repeated_Messages").select("index,universal_message,timestamp").eq("user_id", user_id).eq("guild_id", guild_id)
@@ -233,7 +250,7 @@ class Database2:
 	async def get_scheduled_messages(self, now: datetime.datetime | None = None) -> list:
 		"""Return rows where stored timestamp hour/minute equals now's hour/minute (UTC default)."""
 		response = await self.client.table("DB2_Repeated_Messages").select(
-			"index,user_id,guild_id,timestamp,universal_message,recipient_list"
+			"index,user_id,guild_id,timestamp,universal_message,recipient_list,times_sent"
 		).execute()
 
 		if not response.data:

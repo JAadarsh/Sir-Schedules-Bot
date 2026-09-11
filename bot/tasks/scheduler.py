@@ -69,10 +69,17 @@ class Scheduler:
                 continue
 
             self.bot.state.daily_messages_sent.add(cache_key)
+            delivered = False
             for recipient_id in entry.get("recipient_list") or []:
-                await self.delivery.send_daily_message(
+                delivered = await self.delivery.send_daily_message(
                     recipient_id,
                     message,
+                    entry["user_id"],
+                    entry["guild_id"],
+                    entry["index"],
+                ) or delivered
+            if delivered:
+                await self.bot.db2.increment_times_sent(
                     entry["user_id"],
                     entry["guild_id"],
                     entry["index"],
