@@ -60,8 +60,8 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 
-v0.3.1: QOL overhaul, support for multiple messages, file architecture overhaul, additional backend updates, \& more.
-
+**v0.3.1: QOL overhaul, support for multiple messages, file architecture overhaul, additional backend updates, \& more.
+**
 
 
 v0.2.3: Bug fixes \& QOL updates
