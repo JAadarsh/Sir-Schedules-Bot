@@ -1,7 +1,5 @@
 # Sir Schedule's Bot
 
-#### 
-
 ## Overview
 
 
@@ -18,7 +16,7 @@ Currently in development, but is now available!
 
 
 
-**Please welcome v0.2.2! This version allows for a more updated \& dynamic scheduling system. More features and QOL updates to come in the near future.**
+**Please welcome v0.3.1! This version brings QOL overhauls, better scheduling, and bug fixes. More QOL and patches to roll out within the next few weeks.** 
 
 
 
@@ -42,11 +40,15 @@ Currently in development, but is now available!
 
 
 
-## Rights
+## Rights \& Notices
 
 
 
-Feel free to use this project while citing proper credit. Reach out to inquire about for-profit usage in any capacity.
+Feel free to use this project while citing credit. Reach out to inquire about for-profit usage in any capacity.
+
+
+
+Generative artificial intelligence was utilized to accelerate workflows (not vibe-coded).
 
 
 
@@ -55,6 +57,14 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 ## Changelog
+
+
+
+v0.3.1: QOL overhaul, support for multiple messages, file architecture overhaul, additional backend updates, \& more.
+
+
+
+v0.2.3: Bug fixes \& QOL updates
 
 
 
@@ -90,5 +100,5 @@ v0.1.1: fixes to supabase connection. add recipient slash command now works; add
 
 
 
-**v0.1.0: overhaul to the file organization. some functions may not work as intended.**
+v0.1.0: overhaul to the file organization. some functions may not work as intended.
 

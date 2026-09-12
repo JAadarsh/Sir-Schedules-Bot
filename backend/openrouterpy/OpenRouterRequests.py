@@ -28,16 +28,26 @@ def response(prompt: str, reasoning: bool = True) -> str:
     if reasoning:
         payload['reasoning'] = {'enabled': True}
 
-    response = requests.post(
-        url=OPENROUTER_URL,
-        headers={
-            'Authorization': f'Bearer {OR_TOKEN}',
-            'Content-Type': 'application/json',
-        },
-        data=json.dumps(payload),
-    )
-    response.raise_for_status()
-    response_data = response.json()
-
-    assistant_message = response_data['choices'][0]['message']
-    return assistant_message.get('content', '') or ''
+    try:
+        http_response = requests.post(
+            url=OPENROUTER_URL,
+            headers={
+                'Authorization': f'Bearer {OR_TOKEN}',
+                'Content-Type': 'application/json',
+            },
+            data=json.dumps(payload),
+        )
+        http_response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f'OpenRouter API request failed: {str(e)}')
+    
+    try:
+        response_data = http_response.json()
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f'Failed to parse OpenRouter response: {str(e)}')
+    
+    try:
+        assistant_message = response_data['choices'][0]['message']
+        return assistant_message.get('content', '')
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f'Unexpected OpenRouter response structure: {str(e)}')

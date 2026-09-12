@@ -20,11 +20,17 @@ class Database2:
 		"""Establish async Supabase client using URL and key."""
 		self.client = await acreate_client(self.url, self.key)
 
-	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None, entry_id: int | None = None):
-		"""Upsert a repeated-message row with user_id/guild_id, recipients, message, and optional timestamp or id."""
+	async def create_entry(self, user_id: int, guild_id: int, recipients: list[int] | None = None, message: str = "", timestamp: datetime.datetime | None = None, times_sent: int = 0):
+		"""Insert a repeated-message row using the next available index from 0 through 6."""
 
 		if recipients is None:
 			recipients = []
+
+		existing = await self.client.table("DB2_Repeated_Messages").select("index").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		used_indexes = {row.get("index") for row in existing.data or []}
+		message_index = next((index for index in range(7) if index not in used_indexes), None)
+		if message_index is None:
+			raise ValueError("A user and guild can have at most 7 daily messages")
 
 		ts = None
 		if isinstance(timestamp, datetime.datetime):
@@ -35,30 +41,50 @@ class Database2:
 		payload = {
 			"user_id": user_id,
 			"guild_id": guild_id,
+			"index": message_index,
 			"recipient_list": recipients,
 			"universal_message": message or "",
 			"timestamp": ts,
+			"times_sent": times_sent,
 		}
 
-		if entry_id is not None:
-			payload["id"] = entry_id
-
 		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
+		return message_index
 
-	async def set_universal_message(self, user_id: int, guild_id: int, message: str):
+	async def get_entries(self, user_id: int, guild_id: int) -> list[dict]:
+		"""Return every repeated-message row owned by a user in a guild."""
+		response = await self.client.table("DB2_Repeated_Messages").select("*").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		return response.data or []
+
+	async def get_entry(self, user_id: int, guild_id: int, message_index: int | None = None) -> dict | None:
+		"""Return all stored daily message data for a user in a guild."""
+		query = self.client.table("DB2_Repeated_Messages").select("*").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
+		return response.data[0] if response.data else None
+
+	async def set_universal_message(self, user_id: int, guild_id: int, message: str, message_index: int | None = None):
 		"""Update or insert universal text for a user+guild, preserving recipients."""
-		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("index,recipient_list").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if response.data:
+			message_index = response.data[0].get("index")
 			recipient_list = response.data[0].get("recipient_list") or []
 		else:
 			recipient_list = []
 
-		await self.client.table("DB2_Repeated_Messages").upsert({
+		payload = {
 			"user_id": user_id,
 			"guild_id": guild_id,
 			"recipient_list": recipient_list,
-			"universal_message": message or ""
-		}).execute()
+			"universal_message": message or "",
+		}
+		if message_index is not None:
+			payload["index"] = message_index
+		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
 	async def get_universal_message(self, user_id: int, guild_id: int) -> str:
 		"""Return stored universal message for a user+guild, default empty."""
@@ -67,97 +93,164 @@ class Database2:
 			return ""
 		return response.data[0].get("universal_message") or ""
 
-	async def add_recipient(self, user_id: int, guild_id: int, recipient_id: int):
+	async def add_recipient(self, user_id: int, guild_id: int, recipient_id: int, message_index: int | None = None):
 		"""Append a recipient id to the recipient_list array if missing."""
-		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("index,recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if not response.data:
 			recipient_list = []
 			universal_message = ""
 		else:
+			message_index = response.data[0].get("index")
 			recipient_list = response.data[0].get("recipient_list") or []
 			universal_message = response.data[0].get("universal_message") or ""
 
 		if recipient_id not in recipient_list:
 			recipient_list.append(recipient_id)
-			await self.client.table("DB2_Repeated_Messages").upsert({
+			payload = {
 				"user_id": user_id,
 				"guild_id": guild_id,
 				"recipient_list": recipient_list,
 				"universal_message": universal_message,
-			}).execute()
+			}
+			if message_index is not None:
+				payload["index"] = message_index
+			await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
-	async def remove_recipient(self, user_id: int, guild_id: int, recipient_id: int):
+	async def remove_recipient(self, user_id: int, guild_id: int, recipient_id: int, message_index: int | None = None):
 		"""Remove a recipient id from the recipient_list array if present."""
-		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("index,recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if not response.data:
 			return
 
 		row = response.data[0]
+		message_index = row.get("index")
 		recipient_list = row.get("recipient_list") or []
 		universal_message = row.get("universal_message") or ""
 		if recipient_id in recipient_list:
 			recipient_list.remove(recipient_id)
-			await self.client.table("DB2_Repeated_Messages").upsert({
+			payload = {
 				"user_id": user_id,
 				"guild_id": guild_id,
 				"recipient_list": recipient_list,
 				"universal_message": universal_message,
-			}).execute()
+			}
+			if message_index is not None:
+				payload["index"] = message_index
+			await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
-	async def get_recipients(self, user_id: int, guild_id: int) -> list:
+	async def get_recipients(self, user_id: int, guild_id: int, message_index: int | None = None) -> list:
 		"""Retrieve the recipient_list for a user+guild; returns empty list if none."""
-		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("recipient_list").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if not response.data:
 			return []
 		return response.data[0].get("recipient_list") or []
 
-	async def clear_recipients(self, user_id: int, guild_id: int):
+	async def increment_times_sent(self, user_id: int, guild_id: int, message_index: int) -> int:
+		"""Increment and return the stored send count for one daily message."""
+		response = await self.client.table("DB2_Repeated_Messages").select("times_sent").eq("user_id", user_id).eq("guild_id", guild_id).eq("index", message_index).execute()
+		current_count = response.data[0].get("times_sent") if response.data else 0
+		current_count = current_count or 0
+		if not isinstance(current_count, int):
+			raise ValueError("times_sent must be an integer")
+		new_count = current_count + 1
+		await self.client.table("DB2_Repeated_Messages").upsert({
+			"user_id": user_id,
+			"guild_id": guild_id,
+			"index": message_index,
+			"times_sent": new_count,
+		}).execute()
+		return new_count
+
+	async def clear_recipients(self, user_id: int, guild_id: int, message_index: int | None = None):
 		"""Clear the recipient list while preserving the stored message and schedule."""
-		response = await self.client.table("DB2_Repeated_Messages").select("universal_message,timestamp").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("index,universal_message,timestamp").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if response.data:
 			row = response.data[0]
+			message_index = row.get("index")
 			message = row.get("universal_message") or ""
 			timestamp = row.get("timestamp")
 		else:
 			message = ""
 			timestamp = None
 
-		await self.client.table("DB2_Repeated_Messages").upsert({
+		payload = {
 			"user_id": user_id,
 			"guild_id": guild_id,
 			"recipient_list": [],
 			"universal_message": message,
 			"timestamp": timestamp,
-		}).execute()
+		}
+		if message_index is not None:
+			payload["index"] = message_index
+		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
-	async def set_timestamp(self, user_id: int, guild_id: int, scheduled_time: datetime.datetime):
+	async def set_timestamp(self, user_id: int, guild_id: int, scheduled_time: datetime.datetime, message_index: int | None = None):
 		"""Store a persistent timestamptz for the user's guild schedule."""
 		if isinstance(scheduled_time, datetime.datetime):
 			if scheduled_time.tzinfo is None:
 				scheduled_time = scheduled_time.replace(tzinfo=datetime.timezone.utc)
 			scheduled_time = scheduled_time.isoformat()
 
-		response = await self.client.table("DB2_Repeated_Messages").select("recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id).execute()
+		query = self.client.table("DB2_Repeated_Messages").select("index,recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
 		if response.data:
 			row = response.data[0]
+			message_index = row.get("index")
 			recipient_list = row.get("recipient_list") or []
 			universal_message = row.get("universal_message") or ""
 		else:
 			recipient_list = []
 			universal_message = ""
 
-		await self.client.table("DB2_Repeated_Messages").upsert({
+		payload = {
 			"user_id": user_id,
 			"guild_id": guild_id,
 			"recipient_list": recipient_list,
 			"universal_message": universal_message,
-			"timestamp": scheduled_time
-		}).execute()
+			"timestamp": scheduled_time,
+		}
+		if message_index is not None:
+			payload["index"] = message_index
+		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
+
+	async def clear_timestamp(self, user_id: int, guild_id: int, message_index: int | None = None):
+		"""Clear the scheduled timestamp while preserving the stored recipient list and message."""
+		query = self.client.table("DB2_Repeated_Messages").select("index,recipient_list,universal_message").eq("user_id", user_id).eq("guild_id", guild_id)
+		if message_index is not None:
+			query = query.eq("index", message_index)
+		response = await query.execute()
+		if not response.data:
+			return
+
+		row = response.data[0]
+		payload = {
+			"user_id": user_id,
+			"guild_id": guild_id,
+			"recipient_list": row.get("recipient_list") or [],
+			"universal_message": row.get("universal_message") or "",
+			"timestamp": None,
+			"index": row.get("index"),
+		}
+		await self.client.table("DB2_Repeated_Messages").upsert(payload).execute()
 
 	async def get_scheduled_messages(self, now: datetime.datetime | None = None) -> list:
 		"""Return rows where stored timestamp hour/minute equals now's hour/minute (UTC default)."""
 		response = await self.client.table("DB2_Repeated_Messages").select(
-			"user_id,guild_id,timestamp,universal_message,recipient_list"
+			"index,user_id,guild_id,timestamp,universal_message,recipient_list,times_sent"
 		).execute()
 
 		if not response.data:
@@ -202,3 +295,18 @@ class Database2:
 	async def delete_entry(self, user_id: int, guild_id: int):
 		"""Removes an entry for a user+guild entirely."""
 		await self.client.table("DB2_Repeated_Messages").delete().eq("user_id", user_id).eq("guild_id", guild_id).execute()
+
+	async def delete_user_data(self, user_id: int):
+		"""Remove a user's rows across all guilds and recipient-list references."""
+		response = await self.client.table("DB2_Repeated_Messages").select(
+			"user_id,guild_id,recipient_list"
+		).execute()
+
+		for row in response.data or []:
+			recipient_list = row.get("recipient_list") or []
+			if row.get("user_id") != user_id and user_id in recipient_list:
+				await self.client.table("DB2_Repeated_Messages").update({
+					"recipient_list": [recipient_id for recipient_id in recipient_list if recipient_id != user_id]
+				}).eq("user_id", row["user_id"]).eq("guild_id", row["guild_id"]).execute()
+
+		await self.client.table("DB2_Repeated_Messages").delete().eq("user_id", user_id).execute()
