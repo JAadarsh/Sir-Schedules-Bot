@@ -1,5 +1,5 @@
 """
-v0.2.3
+v0.3.1
 Copyright Aadarsh Joshi 2026
 All rights reserved.
 """
