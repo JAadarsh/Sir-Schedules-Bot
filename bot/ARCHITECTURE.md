@@ -1,8 +1,8 @@
-# Greeter Bot Architecture
+# Sir Schedule's Bot Architecture
 
 ## Overview
 
-Greeter Bot is an asynchronous Discord application built with `discord.py`. It lets users configure one-time and recurring messages, stores those settings in Supabase, delivers messages through Discord direct messages, and provides an OpenRouter-backed AI command.
+Sir Schedule's bot is an asynchronous Discord application built with `discord.py`. It lets users configure one-time and recurring messages, stores those settings in Supabase, delivers messages through Discord direct messages, and provides an OpenRouter-backed AI command.
 
 The system is organized around four layers:
 
