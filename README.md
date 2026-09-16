@@ -48,9 +48,6 @@ Feel free to use this project while citing credit. Reach out to inquire about fo
 
 
 
-Generative artificial intelligence was utilized to accelerate workflows (not vibe-coded).
-
-
 
 Copyright \& IP of Aadarsh Joshi 2026.
 
