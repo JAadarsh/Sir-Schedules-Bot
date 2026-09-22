@@ -12,6 +12,7 @@ testfileOR.py
 backend/supabase/SupabaseTest.py
 backend/supabase/test_supabase_requests.py
 test_timezones.py
+.pytest_cache/
 
 # .ts .js & .json files
 node_modules/
