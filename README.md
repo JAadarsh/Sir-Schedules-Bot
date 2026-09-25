@@ -16,7 +16,7 @@ Currently in development, but is now available!
 
 
 
-**Please welcome v0.3.1! This version brings QOL overhauls, better scheduling, and bug fixes. More QOL and patches to roll out within the next few weeks.** 
+**Please welcome v0.3.1! This version brings QOL overhauls, better scheduling, and bug fixes. More QOL and patches to roll out within the next few weeks.**
 
 
 
@@ -49,6 +49,7 @@ Feel free to use this project while citing credit. Reach out to inquire about fo
 
 
 
+
 Copyright \& IP of Aadarsh Joshi 2026.
 
 
@@ -57,8 +58,7 @@ Copyright \& IP of Aadarsh Joshi 2026.
 
 
 
-**v0.3.1: QOL overhaul, support for multiple messages, file architecture overhaul, additional backend updates, \& more.
-**
+**v0.3.1: QOL overhaul, support for multiple messages, file architecture overhaul, additional backend updates, \& more.**
 
 
 v0.2.3: Bug fixes \& QOL updates
