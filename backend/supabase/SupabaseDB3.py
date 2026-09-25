@@ -1,6 +1,6 @@
 """
 Access object for scheduling role-based repeated messages in Supabase.
-Credit: SUPABASE PTE. LTD. 2026
+Acknowledgement: SUPABASE PTE. LTD. 2026
 ---------------------------------------------
 Aadarsh Joshi 2026
 """
