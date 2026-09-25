@@ -17,3 +17,6 @@ test_timezones.py
 # .ts .js & .json files
 node_modules/
 dist/
+
+# other personal gitignore files
+todo_local.txt
