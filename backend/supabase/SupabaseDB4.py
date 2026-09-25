@@ -39,6 +39,11 @@ class Database4:
 			raise TypeError("premium_status must be a boolean")
 
 	@staticmethod
+	def _validate_timezone(timezone: str):
+		if not isinstance(timezone, str):
+			raise TypeError("timezone must be a string")
+
+	@staticmethod
 	def _serialize_default_time(default_time: datetime.datetime | None) -> str | None:
 		if default_time is None:
 			return None
@@ -53,15 +58,18 @@ class Database4:
 		user_id: int,
 		premium_status: bool = False,
 		default_time: datetime.datetime | None = None,
+		timezone: str = "UTC",
 	):
 		"""Create or replace a user's universal data row."""
 		self._validate_user_id(user_id)
 		self._validate_premium_status(premium_status)
+		self._validate_timezone(timezone)
 
 		await self.client.table(self.TABLE_NAME).upsert({
 			"user_id": user_id,
 			"premium_status": premium_status,
 			"default_time": self._serialize_default_time(default_time),
+			"timezone": timezone,
 		}).execute()
 
 	async def get_entry(self, user_id: int) -> dict | None:
@@ -99,6 +107,23 @@ class Database4:
 		if not response.data:
 			return None
 		return response.data[0].get("default_time")
+
+	async def set_timezone(self, user_id: int, timezone: str):
+		"""Set a user's timezone preference."""
+		self._validate_user_id(user_id)
+		self._validate_timezone(timezone)
+		await self.client.table(self.TABLE_NAME).upsert({
+			"user_id": user_id,
+			"timezone": timezone,
+		}).execute()
+
+	async def get_timezone(self, user_id: int) -> str:
+		"""Return a user's timezone, defaulting to UTC when absent or unset."""
+		self._validate_user_id(user_id)
+		response = await self.client.table(self.TABLE_NAME).select("timezone").eq("user_id", user_id).execute()
+		if not response.data:
+			return "UTC"
+		return response.data[0].get("timezone") or "UTC"
 
 	async def delete_entry(self, user_id: int):
 		"""Delete a user's universal data row."""
